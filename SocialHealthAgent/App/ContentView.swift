@@ -4,18 +4,25 @@ import SwiftUI
 /// Controls which screen is displayed based on app state
 struct ContentView: View {
     @StateObject private var sessionManager = SessionManager()
+    @State private var hasAPIKey = OpenAIService.hasAPIKey
 
     var body: some View {
         NavigationStack {
-            switch sessionManager.currentScreen {
-            case .welcome:
-                WelcomeView(sessionManager: sessionManager)
-            case .voiceAgent:
-                VoiceAgentView(sessionManager: sessionManager)
-            case .activityRecommendation:
-                ActivityCardView(sessionManager: sessionManager)
-            case .thankYou:
-                ThankYouView(sessionManager: sessionManager)
+            if !hasAPIKey {
+                // Show API key setup on first launch
+                APIKeySetupView(isConfigured: $hasAPIKey)
+            } else {
+                // Normal app flow
+                switch sessionManager.currentScreen {
+                case .welcome:
+                    WelcomeView(sessionManager: sessionManager)
+                case .voiceAgent:
+                    VoiceAgentView(sessionManager: sessionManager)
+                case .activityRecommendation:
+                    ActivityCardView(sessionManager: sessionManager)
+                case .thankYou:
+                    ThankYouView(sessionManager: sessionManager)
+                }
             }
         }
         .preferredColorScheme(.light)

@@ -9,15 +9,21 @@ class OpenAIService: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
 
-    // MARK: - Private Properties
+    // MARK: - API Key Management
 
-    /// Your OpenAI API key - replace with your actual key
-    /// For production, this should be stored securely (Keychain)
-    /// For prototype testing, you can hardcode it here
+    /// The API key stored in UserDefaults (on device only, not in code)
+    static var storedAPIKey: String {
+        get { UserDefaults.standard.string(forKey: "openai_api_key") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "openai_api_key") }
+    }
+
+    /// Check if API key is configured
+    static var hasAPIKey: Bool {
+        !storedAPIKey.isEmpty
+    }
+
     private var apiKey: String {
-        // Try to get from environment or use placeholder
-        // IMPORTANT: Replace "YOUR_API_KEY_HERE" with your actual OpenAI API key
-        return ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? "YOUR_API_KEY_HERE"
+        return OpenAIService.storedAPIKey
     }
 
     // MARK: - Conversation Methods
