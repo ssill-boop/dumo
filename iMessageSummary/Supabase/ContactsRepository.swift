@@ -11,7 +11,7 @@ final class ContactsRepository {
     /// if we now have a non-empty value and it differs from the stored one.
     func findOrCreate(phoneOrEmail: String, displayName: String?) async throws -> Contact {
         let existing: [Contact] = try await client.get(
-            "contacts",
+            "imessage_contacts",
             query: [
                 URLQueryItem(name: "phone_or_email", value: "eq.\(phoneOrEmail)"),
                 URLQueryItem(name: "limit", value: "1"),
@@ -21,7 +21,7 @@ final class ContactsRepository {
             if let new = displayName?.nilIfEmpty, found.displayName != new {
                 struct Patch: Encodable { let display_name: String }
                 let updated: [Contact] = try await client.update(
-                    "contacts",
+                    "imessage_contacts",
                     query: [URLQueryItem(name: "id", value: "eq.\(found.id.uuidString)")],
                     body: Patch(display_name: new)
                 )
@@ -34,7 +34,7 @@ final class ContactsRepository {
             let display_name: String?
         }
         let inserted: [Contact] = try await client.insert(
-            "contacts",
+            "imessage_contacts",
             body: New(phone_or_email: phoneOrEmail, display_name: displayName?.nilIfEmpty)
         )
         guard let contact = inserted.first else { throw SupabaseClient.Error.emptyResponse }
@@ -43,7 +43,7 @@ final class ContactsRepository {
 
     func fetchAll() async throws -> [Contact] {
         try await client.get(
-            "contacts",
+            "imessage_contacts",
             query: [URLQueryItem(name: "order", value: "display_name.asc.nullslast")]
         )
     }
@@ -51,7 +51,7 @@ final class ContactsRepository {
     func setBlacklisted(contactID: UUID, isBlacklisted: Bool) async throws -> Contact {
         struct Patch: Encodable { let is_blacklisted: Bool }
         let updated: [Contact] = try await client.update(
-            "contacts",
+            "imessage_contacts",
             query: [URLQueryItem(name: "id", value: "eq.\(contactID.uuidString)")],
             body: Patch(is_blacklisted: isBlacklisted)
         )

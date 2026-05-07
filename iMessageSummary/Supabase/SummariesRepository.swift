@@ -9,7 +9,7 @@ final class SummariesRepository {
 
     func latestSummary(contactID: UUID) async throws -> Summary? {
         let results: [Summary] = try await client.get(
-            "summaries",
+            "imessage_summaries",
             query: [
                 URLQueryItem(name: "contact_id", value: "eq.\(contactID.uuidString)"),
                 URLQueryItem(name: "order", value: "created_at.desc"),
@@ -20,7 +20,7 @@ final class SummariesRepository {
     }
 
     func insert(_ summary: NewSummary) async throws -> Summary {
-        let inserted: [Summary] = try await client.insert("summaries", body: summary)
+        let inserted: [Summary] = try await client.insert("imessage_summaries", body: summary)
         guard let value = inserted.first else { throw SupabaseClient.Error.emptyResponse }
         return value
     }
@@ -31,7 +31,7 @@ final class SummariesRepository {
     func contactsWithSummaries(via contactsRepo: ContactsRepository) async throws -> [Contact] {
         struct Row: Decodable { let contact_id: UUID }
         let rows: [Row] = try await client.get(
-            "summaries",
+            "imessage_summaries",
             query: [URLQueryItem(name: "select", value: "contact_id")]
         )
         let ids = Set(rows.map(\.contact_id))
