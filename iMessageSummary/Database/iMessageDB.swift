@@ -134,6 +134,46 @@ final class iMessageDB {
     HAVING COUNT(DISTINCT chat_handle_join.handle_id) = 1
     """
 
+    /// Number of distinct participating handles for the chat whose
+    /// `chat.display_name` (case-insensitive) matches the given title.
+    /// Returns nil if no chat with that display name exists.
+    func handleCountForChat(displayName: String) throws -> Int? {
+        let sql = """
+        SELECT COUNT(DISTINCT chat_handle_join.handle_id) AS handle_count
+        FROM chat
+        LEFT JOIN chat_handle_join ON chat.ROWID = chat_handle_join.chat_id
+        WHERE LOWER(chat.display_name) = LOWER(?)
+        GROUP BY chat.ROWID
+        ORDER BY chat.ROWID DESC
+        LIMIT 1;
+        """
+        var result: Int?
+        try prepare(sql) { stmt in
+            sqlite3_bind_text(stmt, 1, displayName, -1, SQLITE_TRANSIENT)
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                result = Int(sqlite3_column_int(stmt, 0))
+            }
+        }
+        return result
+    }
+
+    /// True iff this handle has at least one 1:1 chat with us in chat.db.
+    /// A handle that only appears in group chats returns false — the
+    /// pipeline uses this to refuse summarizing.
+    func hasOneToOneChat(forHandleID handleID: String) throws -> Bool {
+        let sql = """
+        SELECT 1
+        FROM (\(Self.oneToOneChatsSubquery)) AS one_to_ones
+        LIMIT 1;
+        """
+        var found = false
+        try prepare(sql) { stmt in
+            sqlite3_bind_text(stmt, 1, handleID, -1, SQLITE_TRANSIENT)
+            found = sqlite3_step(stmt) == SQLITE_ROW
+        }
+        return found
+    }
+
     /// Messages for a handle, only ones whose ROWID is greater than `sinceRowID`.
     /// Pass 0 to get every message (subject to the SQL filters).
     func fetchMessages(forHandleID handleID: String, sinceRowID: Int64 = 0) throws -> [Message] {

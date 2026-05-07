@@ -81,21 +81,7 @@ final class SummaryPipeline {
             state.viewState = .empty
             return
         }
-        if looksLikeGroupChat(query) {
-            // Per the spec, group chats are out of scope for v1. Misleading the
-            // user with a one-participant 1:1 summary is worse than saying so.
-            state.activeContact = nil
-            state.activeHandleID = nil
-            state.currentSummary = nil
-            state.pendingMessageCount = 0
-            state.viewState = .error("Group chats aren't yet supported. Open a one-on-one conversation in iMessage to summarize it.")
-            return
-        }
         kickOff(query: query, generate: false)
-    }
-
-    private func looksLikeGroupChat(_ title: String) -> Bool {
-        title.contains("&") || title.contains(",")
     }
 
     private func handleManualSelect(contact: Contact) {
@@ -152,6 +138,20 @@ final class SummaryPipeline {
         }
         defer { db.close() }
 
+        // Named groups in chat.db (e.g. user-titled "Roommates", or auto-named
+        // "Sofia & Krisjanis" when iMessage has stored a display_name) get
+        // caught here by counting participants in the matching chat.
+        if let count = try? db.handleCountForChat(displayName: handleQuery), count > 1 {
+            if isStillCurrent(token) {
+                state.activeContact = nil
+                state.activeHandleID = nil
+                state.currentSummary = nil
+                state.pendingMessageCount = 0
+                state.viewState = .error("Group chats aren't yet supported (\(count) participants). Open a one-on-one conversation to summarize it.")
+            }
+            return
+        }
+
         let row: ContactRow
         do {
             if let direct = try db.findContact(matching: handleQuery) {
@@ -167,6 +167,21 @@ final class SummaryPipeline {
         } catch {
             if isStillCurrent(token) {
                 state.viewState = .error("chat.db lookup failed: \(error)")
+            }
+            return
+        }
+
+        // Even if the handle resolves cleanly, refuse to summarize unless
+        // they have at least one 1:1 chat with us. Catches the case where
+        // someone we only ever message in groups gets resolved by Contacts
+        // because their name is in the AX title.
+        if (try? db.hasOneToOneChat(forHandleID: row.handleID)) == false {
+            if isStillCurrent(token) {
+                state.activeContact = nil
+                state.activeHandleID = nil
+                state.currentSummary = nil
+                state.pendingMessageCount = 0
+                state.viewState = .error("This person isn't in any one-on-one thread with you (group chats aren't yet supported).")
             }
             return
         }
