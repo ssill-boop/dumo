@@ -95,7 +95,7 @@ struct SummaryView: View {
     private var updateBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .foregroundStyle(.accentColor)
+                .foregroundStyle(Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(state.pendingMessageCount) new message\(state.pendingMessageCount == 1 ? "" : "s")")
                     .font(.callout.weight(.medium))
