@@ -19,9 +19,8 @@ enum MessageWindow: String, CaseIterable {
     case oneYear
     case allTime
 
-    /// Cutoff in Apple-epoch nanoseconds (the unit the message.date column uses
-    /// on macOS 10.13+). Returns nil for `.allTime`.
-    func cutoffAppleEpochNanos(now: Date = Date()) -> Int64? {
+    /// Foundation Date at the start of the window; nil for `.allTime`.
+    func cutoffDate(now: Date = Date()) -> Date? {
         let component: Calendar.Component
         let value: Int
         switch self {
@@ -31,9 +30,13 @@ enum MessageWindow: String, CaseIterable {
         case .oneYear: component = .year; value = -1
         case .allTime: return nil
         }
-        guard let cutoff = Calendar.current.date(byAdding: component, value: value, to: now) else {
-            return nil
-        }
+        return Calendar.current.date(byAdding: component, value: value, to: now)
+    }
+
+    /// Cutoff in Apple-epoch nanoseconds (the unit the message.date column uses
+    /// on macOS 10.13+). Returns nil for `.allTime`.
+    func cutoffAppleEpochNanos(now: Date = Date()) -> Int64? {
+        guard let cutoff = cutoffDate(now: now) else { return nil }
         let appleSeconds = cutoff.timeIntervalSince1970 - appleEpochOffsetSeconds
         return Int64(appleSeconds * 1_000_000_000)
     }

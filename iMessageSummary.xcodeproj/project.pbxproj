@@ -28,6 +28,8 @@
 		AA10000000000000000030F8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A8 /* SettingsView.swift */; };
 		AA10000000000000000030F9 /* SidebarWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A9 /* SidebarWindowController.swift */; };
 		AA10000000000000000040F1 /* ActiveThreadWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000040A1 /* ActiveThreadWatcher.swift */; };
+		AA10000000000000000050F1 /* SummaryPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000050A1 /* SummaryPipeline.swift */; };
+		AA10000000000000000050F2 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000050A2 /* OnboardingView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,6 +57,8 @@
 		AA10000000000000000030A8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA10000000000000000030A9 /* SidebarWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWindowController.swift; sourceTree = "<group>"; };
 		AA10000000000000000040A1 /* ActiveThreadWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveThreadWatcher.swift; sourceTree = "<group>"; };
+		AA10000000000000000050A1 /* SummaryPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPipeline.swift; sourceTree = "<group>"; };
+		AA10000000000000000050A2 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,12 +90,21 @@
 				AA10000000000000000000C6 /* Database */,
 				AA10000000000000000000C7 /* Supabase */,
 				AA10000000000000000000C8 /* AI */,
+				AA10000000000000000000CB /* Pipeline */,
 				AA10000000000000000000C9 /* Views */,
 				AA10000000000000000000CA /* Models */,
 				AA10000000000000000000A5 /* Info.plist */,
 				AA10000000000000000000A6 /* iMessageSummary.entitlements */,
 			);
 			path = iMessageSummary;
+			sourceTree = "<group>";
+		};
+		AA10000000000000000000CB /* Pipeline */ = {
+			isa = PBXGroup;
+			children = (
+				AA10000000000000000050A1 /* SummaryPipeline.swift */,
+			);
+			path = Pipeline;
 			sourceTree = "<group>";
 		};
 		AA10000000000000000000C3 /* Products */ = {
@@ -154,6 +167,7 @@
 				AA10000000000000000030A7 /* SearchView.swift */,
 				AA10000000000000000030A8 /* SettingsView.swift */,
 				AA10000000000000000030A9 /* SidebarWindowController.swift */,
+				AA10000000000000000050A2 /* OnboardingView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -259,6 +273,8 @@
 				AA10000000000000000030F8 /* SettingsView.swift in Sources */,
 				AA10000000000000000030F9 /* SidebarWindowController.swift in Sources */,
 				AA10000000000000000040F1 /* ActiveThreadWatcher.swift in Sources */,
+				AA10000000000000000050F1 /* SummaryPipeline.swift in Sources */,
+				AA10000000000000000050F2 /* OnboardingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
