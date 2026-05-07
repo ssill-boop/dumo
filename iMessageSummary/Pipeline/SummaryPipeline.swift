@@ -13,9 +13,9 @@ final class SummaryPipeline {
     private var currentTask: Task<Void, Never>?
     private var lastResolvedHandle: String?
 
-    init(state: AppState, watcher: ActiveThreadWatcher = ActiveThreadWatcher()) {
+    init(state: AppState, watcher: ActiveThreadWatcher? = nil) {
         self.state = state
-        self.watcher = watcher
+        self.watcher = watcher ?? ActiveThreadWatcher()
     }
 
     func start() {

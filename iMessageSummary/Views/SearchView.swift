@@ -14,7 +14,7 @@ struct SearchView: View {
                         .padding(12)
                 } else {
                     ForEach(filtered) { contact in
-                        ContactRow(contact: contact)
+                        SummaryContactRow(contact: contact)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                         Divider()
@@ -32,7 +32,7 @@ struct SearchView: View {
     }
 }
 
-private struct ContactRow: View {
+private struct SummaryContactRow: View {
     let contact: Contact
 
     var body: some View {
