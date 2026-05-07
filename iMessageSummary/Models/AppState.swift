@@ -8,7 +8,6 @@ final class AppState: ObservableObject {
         case loading(phase: String)
         case loaded(newMessageCount: Int)
         case error(String)
-        case blacklisted
     }
 
     enum PermissionStatus: Equatable {
@@ -40,6 +39,7 @@ final class AppState: ObservableObject {
     let config: AppConfig
     let cache: LocalSummaryCache
     let db: iMessageDB
+    let contactsResolver: ContactsResolver
     let supabase: SupabaseClient?
     let contactsRepo: ContactsRepository?
     let summariesRepo: SummariesRepository?
@@ -54,6 +54,7 @@ final class AppState: ObservableObject {
         self.config = config
         self.cache = LocalSummaryCache()
         self.db = iMessageDB()
+        self.contactsResolver = ContactsResolver()
 
         if let client = SupabaseClient(url: config.supabaseURL, anonKey: config.supabaseAnonKey) {
             self.supabase = client

@@ -34,6 +34,13 @@ final class SummaryPipeline {
         ) { [weak self] _ in
             Task { @MainActor in self?.regenerate() }
         }
+        NotificationCenter.default.addObserver(
+            forName: .iMessageSummaryRefresh,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
 
         watcher.start { [weak self] event in
             Task { @MainActor in self?.handle(event: event) }
@@ -90,6 +97,12 @@ final class SummaryPipeline {
         kickOff(query: handle, forceRegenerate: true)
     }
 
+    private func refresh() {
+        guard let handle = state.activeHandleID else { return }
+        currentTask?.cancel()
+        kickOff(query: handle, forceRegenerate: false)
+    }
+
     private func kickOff(query: String, forceRegenerate: Bool) {
         state.viewState = .loading(phase: "Reading messages…")
         let window = state.messageWindow
@@ -111,8 +124,18 @@ final class SummaryPipeline {
         }
         defer { db.close() }
 
-        guard let row = (try? db.findContact(matching: handleQuery)) ?? nil else {
-            state.viewState = .error("No iMessage thread matched '\(handleQuery)'.")
+        let row: ContactRow
+        do {
+            if let direct = try db.findContact(matching: handleQuery) {
+                row = direct
+            } else if let viaContacts = await resolveThroughContacts(displayName: handleQuery, db: db) {
+                row = viaContacts
+            } else {
+                state.viewState = .error("No iMessage thread matched '\(handleQuery)'.")
+                return
+            }
+        } catch {
+            state.viewState = .error("chat.db lookup failed: \(error)")
             return
         }
         let handle = row.handleID
@@ -131,10 +154,6 @@ final class SummaryPipeline {
                 contact = resolved
                 state.activeContact = resolved
                 state.isUsingLocalFallback = false
-                if resolved.isBlacklisted {
-                    state.viewState = .blacklisted
-                    return
-                }
             } catch {
                 print("[Pipeline] Supabase contact lookup failed: \(error); falling back to local cache.")
                 state.isUsingLocalFallback = true
@@ -147,11 +166,29 @@ final class SummaryPipeline {
         var localPrior: LocalSummaryCache.Entry?
         if !forceRegenerate {
             if let summariesRepo = state.summariesRepo, let contact {
-                prior = try? await summariesRepo.latestSummary(contactID: contact.id)
+                do {
+                    prior = try await summariesRepo.latestSummary(contactID: contact.id)
+                    print("[Pipeline] latestSummary -> \(prior == nil ? "nil" : "found row last_rowid=\(prior!.lastMessageRowID)")")
+                } catch {
+                    print("[Pipeline] latestSummary failed: \(error)")
+                }
             }
             if prior == nil {
                 localPrior = state.cache.read(handle: handle)
             }
+        }
+
+        // Paused: surface whatever we already have, never call the generator.
+        if contact?.isBlacklisted == true {
+            if let prior {
+                state.currentSummary = prior
+            } else if let localPrior {
+                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
+            } else {
+                state.currentSummary = nil
+            }
+            state.viewState = .loaded(newMessageCount: 0)
+            return
         }
 
         let messages: [Message]
@@ -171,6 +208,8 @@ final class SummaryPipeline {
             state.viewState = .error("Couldn't read messages: \(error)")
             return
         }
+
+        print("[Pipeline] fetched \(messages.count) messages (incremental=\(isIncremental))")
 
         if messages.isEmpty {
             if let prior {
@@ -262,6 +301,30 @@ final class SummaryPipeline {
         state.cache.write(handle: handle, entry: entry)
         state.currentSummary = synthesizeSummary(from: entry, contact: contact, handle: handle)
         state.viewState = .loaded(newMessageCount: messages.count)
+    }
+
+    /// chat.db has no name table — Catalyst Messages shows names from
+    /// Contacts.app. When the AX-reported display name doesn't directly
+    /// match a handle, ask Contacts for that person's phones / emails and
+    /// retry the chat.db lookup with each one.
+    private func resolveThroughContacts(displayName: String, db: iMessageDB) async -> ContactRow? {
+        let candidates = await state.contactsResolver.handles(forDisplayName: displayName)
+        guard !candidates.isEmpty else {
+            print("[Pipeline] Contacts returned no handles for '\(displayName)'")
+            return nil
+        }
+        for candidate in candidates {
+            if let match = try? db.findContact(matching: candidate) {
+                print("[Pipeline] Contacts resolved '\(displayName)' -> \(candidate) -> \(match.handleID)")
+                return ContactRow(
+                    handleRowID: match.handleRowID,
+                    handleID: match.handleID,
+                    displayName: match.displayName?.nilIfEmpty ?? displayName
+                )
+            }
+        }
+        print("[Pipeline] Contacts gave \(candidates.count) candidates but none matched chat.db")
+        return nil
     }
 
     private func synthesizeSummary(

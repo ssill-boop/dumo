@@ -49,8 +49,6 @@ struct SidebarView: View {
                 SummaryView(newMessageCount: newCount)
             case .error(let message):
                 ErrorStateView(message: message)
-            case .blacklisted:
-                BlacklistedStateView()
             }
         }
     }

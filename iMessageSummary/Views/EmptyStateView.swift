@@ -37,25 +37,3 @@ struct ErrorStateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
-
-struct BlacklistedStateView: View {
-    @EnvironmentObject var state: AppState
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "pause.circle")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-            Text("Summaries paused")
-                .font(.headline)
-            if let display = state.activeContactDisplay ?? state.activeContact?.bestDisplayName {
-                Text("for \(display)")
-                    .foregroundStyle(.secondary)
-            }
-            Button("Unpause") {
-                Task { await SummaryActions.setBlacklisted(state, isBlacklisted: false) }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}

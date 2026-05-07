@@ -30,6 +30,7 @@
 		AA10000000000000000040F1 /* ActiveThreadWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000040A1 /* ActiveThreadWatcher.swift */; };
 		AA10000000000000000050F1 /* SummaryPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000050A1 /* SummaryPipeline.swift */; };
 		AA10000000000000000050F2 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000050A2 /* OnboardingView.swift */; };
+		AA10000000000000000060F1 /* ContactsResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000060A1 /* ContactsResolver.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -59,6 +60,7 @@
 		AA10000000000000000040A1 /* ActiveThreadWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveThreadWatcher.swift; sourceTree = "<group>"; };
 		AA10000000000000000050A1 /* SummaryPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryPipeline.swift; sourceTree = "<group>"; };
 		AA10000000000000000050A2 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		AA10000000000000000060A1 /* ContactsResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsResolver.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -135,6 +137,7 @@
 			isa = PBXGroup;
 			children = (
 				AA10000000000000000000A8 /* iMessageDB.swift */,
+				AA10000000000000000060A1 /* ContactsResolver.swift */,
 			);
 			path = Database;
 			sourceTree = "<group>";
@@ -275,6 +278,7 @@
 				AA10000000000000000040F1 /* ActiveThreadWatcher.swift in Sources */,
 				AA10000000000000000050F1 /* SummaryPipeline.swift in Sources */,
 				AA10000000000000000050F2 /* OnboardingView.swift in Sources */,
+				AA10000000000000000060F1 /* ContactsResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
