@@ -81,7 +81,21 @@ final class SummaryPipeline {
             state.viewState = .empty
             return
         }
+        if looksLikeGroupChat(query) {
+            // Per the spec, group chats are out of scope for v1. Misleading the
+            // user with a one-participant 1:1 summary is worse than saying so.
+            state.activeContact = nil
+            state.activeHandleID = nil
+            state.currentSummary = nil
+            state.pendingMessageCount = 0
+            state.viewState = .error("Group chats aren't yet supported. Open a one-on-one conversation in iMessage to summarize it.")
+            return
+        }
         kickOff(query: query, generate: false)
+    }
+
+    private func looksLikeGroupChat(_ title: String) -> Bool {
+        title.contains("&") || title.contains(",")
     }
 
     private func handleManualSelect(contact: Contact) {
@@ -158,7 +172,15 @@ final class SummaryPipeline {
         }
         guard isStillCurrent(token) else { return }
         let handle = row.handleID
-        let displayName = row.displayName?.nilIfEmpty ?? handleQuery
+        // Prefer (in this order): the chat.db chat.display_name, the
+        // AX-reported friendly name we already have on AppState, then the
+        // raw query as a last resort. This keeps "Sofia Sill" sticky even
+        // when the user clicks Generate (which re-runs the pipeline with
+        // handleQuery == phone number, which would otherwise become the
+        // displayName and overwrite the friendly name in Supabase).
+        let displayName = row.displayName?.nilIfEmpty
+            ?? state.activeContactDisplay?.nilIfEmpty
+            ?? handleQuery
         state.activeHandleID = handle
         state.activeContactDisplay = displayName
         lastResolvedHandle = handle

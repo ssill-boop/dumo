@@ -120,14 +120,28 @@ final class iMessageDB {
         return result
     }
 
+    /// Subquery selecting only chats that contain *exactly one* handle (i.e.
+    /// the 1:1 conversations with this contact). Excludes group chats this
+    /// person also participates in, so their messages from groups don't leak
+    /// into the 1:1 summary.
+    private static let oneToOneChatsSubquery = """
+    SELECT chat.ROWID
+    FROM chat
+    JOIN chat_handle_join ON chat.ROWID = chat_handle_join.chat_id
+    JOIN handle ON chat_handle_join.handle_id = handle.ROWID
+    WHERE handle.id = ?
+    GROUP BY chat.ROWID
+    HAVING COUNT(DISTINCT chat_handle_join.handle_id) = 1
+    """
+
     /// Messages for a handle, only ones whose ROWID is greater than `sinceRowID`.
     /// Pass 0 to get every message (subject to the SQL filters).
     func fetchMessages(forHandleID handleID: String, sinceRowID: Int64 = 0) throws -> [Message] {
         let sql = """
         SELECT message.ROWID, message.date, message.is_from_me, message.text
         FROM message
-        LEFT JOIN handle ON message.handle_id = handle.ROWID
-        WHERE handle.id = ?
+        JOIN chat_message_join ON message.ROWID = chat_message_join.message_id
+        WHERE chat_message_join.chat_id IN (\(Self.oneToOneChatsSubquery))
           AND message.text IS NOT NULL
           AND message.text != ''
           AND message.associated_message_type = 0
@@ -148,8 +162,8 @@ final class iMessageDB {
             sql = """
             SELECT message.ROWID, message.date, message.is_from_me, message.text
             FROM message
-            LEFT JOIN handle ON message.handle_id = handle.ROWID
-            WHERE handle.id = ?
+            JOIN chat_message_join ON message.ROWID = chat_message_join.message_id
+            WHERE chat_message_join.chat_id IN (\(Self.oneToOneChatsSubquery))
               AND message.text IS NOT NULL
               AND message.text != ''
               AND message.associated_message_type = 0
@@ -161,8 +175,8 @@ final class iMessageDB {
             sql = """
             SELECT message.ROWID, message.date, message.is_from_me, message.text
             FROM message
-            LEFT JOIN handle ON message.handle_id = handle.ROWID
-            WHERE handle.id = ?
+            JOIN chat_message_join ON message.ROWID = chat_message_join.message_id
+            WHERE chat_message_join.chat_id IN (\(Self.oneToOneChatsSubquery))
               AND message.text IS NOT NULL
               AND message.text != ''
               AND message.associated_message_type = 0
