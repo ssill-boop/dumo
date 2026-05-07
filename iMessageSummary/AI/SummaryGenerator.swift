@@ -198,10 +198,16 @@ final class SummaryGenerator {
     }
 
     private static func formatMessages(displayName: String, messages: [Message]) -> String {
-        messages.map { msg -> String in
+        messages.compactMap { msg -> String? in
+            // Strip iMessage's attachment placeholder (U+FFFC) so the model
+            // sees clean text rather than mystery characters.
+            let cleaned = msg.text
+                .replacingOccurrences(of: "\u{FFFC}", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty else { return nil }
             let when = messageDateFormatter.string(from: msg.date)
             let who = msg.isFromMe ? "Me" : displayName
-            return "[\(when)] \(who): \(msg.text)"
+            return "[\(when)] \(who): \(cleaned)"
         }.joined(separator: "\n")
     }
 }

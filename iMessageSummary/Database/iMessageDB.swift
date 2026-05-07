@@ -131,6 +131,7 @@ final class iMessageDB {
           AND message.text IS NOT NULL
           AND message.text != ''
           AND message.associated_message_type = 0
+          AND replace(message.text, char(65532), '') != ''
           AND message.ROWID > ?
         ORDER BY message.date ASC;
         """
@@ -152,6 +153,7 @@ final class iMessageDB {
               AND message.text IS NOT NULL
               AND message.text != ''
               AND message.associated_message_type = 0
+              AND replace(message.text, char(65532), '') != ''
               AND message.date >= \(cutoff)
             ORDER BY message.date ASC;
             """
@@ -164,6 +166,7 @@ final class iMessageDB {
               AND message.text IS NOT NULL
               AND message.text != ''
               AND message.associated_message_type = 0
+              AND replace(message.text, char(65532), '') != ''
             ORDER BY message.date ASC;
             """
         }
