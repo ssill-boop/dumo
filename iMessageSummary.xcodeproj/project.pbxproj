@@ -17,6 +17,7 @@
 		AA10000000000000000010F3 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A3 /* SupabaseClient.swift */; };
 		AA10000000000000000010F4 /* ContactsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A4 /* ContactsRepository.swift */; };
 		AA10000000000000000010F5 /* SummariesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A5 /* SummariesRepository.swift */; };
+		AA10000000000000000020F1 /* SummaryGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000020A1 /* SummaryGenerator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		AA10000000000000000010A3 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		AA10000000000000000010A4 /* ContactsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsRepository.swift; sourceTree = "<group>"; };
 		AA10000000000000000010A5 /* SummariesRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummariesRepository.swift; sourceTree = "<group>"; };
+		AA10000000000000000020A1 /* SummaryGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryGenerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -116,6 +118,7 @@
 		AA10000000000000000000C8 /* AI */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000020A1 /* SummaryGenerator.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -215,6 +218,7 @@
 				AA10000000000000000010F3 /* SupabaseClient.swift in Sources */,
 				AA10000000000000000010F4 /* ContactsRepository.swift in Sources */,
 				AA10000000000000000010F5 /* SummariesRepository.swift in Sources */,
+				AA10000000000000000020F1 /* SummaryGenerator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
