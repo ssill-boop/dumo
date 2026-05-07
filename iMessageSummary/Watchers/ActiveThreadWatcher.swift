@@ -2,21 +2,18 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-/// Observes which conversation row is selected in iMessage and emits the
-/// row's display string (a contact name or a phone/email) on each change.
+/// Detects which iMessage conversation is currently active.
 ///
-/// Strategy:
-///   1. Find the running iMessage process (`com.apple.MobileSMS`).
-///   2. Build an AXUIElement for it and search the window subtree for an
-///      AXOutline / AXTable whose selected row carries the conversation
-///      identifier.
-///   3. Install an AX observer for AXSelectedRowsChangedNotification on
-///      that element so we update without polling.
-///   4. Reattach when iMessage is launched / activated.
+/// On modern macOS, Messages is a Catalyst app whose conversation list is an
+/// `AXGroup` (`CKConversationListCollectionView`) — it does *not* expose
+/// `AXSelectedRows` the way a native AppKit `AXOutline` would. AXObservers for
+/// selection notifications never fire. Two signals are reliable:
 ///
-/// If AX permission isn't granted (`AXIsProcessTrusted` is false), the
-/// watcher reports `.permissionDenied` and stops; the onboarding flow
-/// surfaces the prompt to System Settings.
+/// 1. The Messages main window's title changes to the active contact's name.
+/// 2. An `AXButton` with `AXIdentifier == "ConversationTitle"` sits at the top
+///    of the message pane and exposes the same name as a fallback.
+///
+/// We poll those at ~1 Hz instead of relying on accessibility notifications.
 @MainActor
 final class ActiveThreadWatcher {
     enum Event {
@@ -27,17 +24,15 @@ final class ActiveThreadWatcher {
 
     private(set) var isWatching = false
     private var onEvent: ((Event) -> Void)?
-
-    private var messagesPID: pid_t?
-    private var appElement: AXUIElement?
-    private var observer: AXObserver?
-    private var observedElement: AXUIElement?
+    private var pollTimer: Timer?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var lastReported: String?
+    private var sawMessagesProcess = true
 
     private static let messagesBundleID = "com.apple.MobileSMS"
+    private static let pollInterval: TimeInterval = 1.0
 
     deinit {
-        // observers are torn down explicitly below, but make sure timers stop
         for token in workspaceObservers {
             NotificationCenter.default.removeObserver(token)
         }
@@ -50,15 +45,17 @@ final class ActiveThreadWatcher {
             onEvent(.permissionDenied)
             return
         }
-        print("[Watcher] starting")
+        print("[Watcher] starting (polling mode)")
         isWatching = true
         registerWorkspaceObservers()
-        attach()
+        startPolling()
+        poll()
     }
 
     func stop() {
         isWatching = false
-        detach()
+        pollTimer?.invalidate()
+        pollTimer = nil
         for token in workspaceObservers {
             NotificationCenter.default.removeObserver(token)
         }
@@ -67,9 +64,6 @@ final class ActiveThreadWatcher {
 
     // MARK: - Permission
 
-    /// `AXIsProcessTrustedWithOptions` triggers the system's "untrusted app"
-    /// banner the first time we ask with prompt=true. The onboarding flow
-    /// passes prompt=true; the watcher itself prefers prompt=false.
     @discardableResult
     static func requestAccessibilityPermission(promptIfNeeded: Bool) -> Bool {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -81,7 +75,74 @@ final class ActiveThreadWatcher {
         ActiveThreadWatcher.requestAccessibilityPermission(promptIfNeeded: promptIfNeeded)
     }
 
-    // MARK: - Lifecycle
+    // MARK: - Polling
+
+    private func startPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.poll() }
+        }
+    }
+
+    private func poll() {
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: Self.messagesBundleID).first else {
+            if sawMessagesProcess {
+                sawMessagesProcess = false
+                lastReported = nil
+                print("[Watcher] Messages not running")
+                onEvent?(.messagesNotRunning)
+            }
+            return
+        }
+        sawMessagesProcess = true
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        let display = readActiveConversation(appEl: appEl)
+        if display != lastReported {
+            lastReported = display
+            print("[Watcher] active conversation: \(display ?? "nil")")
+            onEvent?(.selectionChanged(displayString: display))
+        }
+    }
+
+    private func readActiveConversation(appEl: AXUIElement) -> String? {
+        // Primary: window title (Messages updates this to the active contact name).
+        if let title = mainWindowTitle(appEl: appEl), !isGenericWindowTitle(title) {
+            return title
+        }
+        // Fallback: the ConversationTitle button at the top of the message pane.
+        if let button = findElement(in: appEl, where: { el in
+            self.string(of: el, attribute: "AXIdentifier" as CFString) == "ConversationTitle"
+        }) {
+            for attr in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
+                if let s = string(of: button, attribute: attr as CFString),
+                   !s.isEmpty,
+                   !isGenericWindowTitle(s) {
+                    return s
+                }
+            }
+        }
+        return nil
+    }
+
+    private func mainWindowTitle(appEl: AXUIElement) -> String? {
+        if let main = attributeValue(of: appEl, attribute: kAXMainWindowAttribute as CFString) as AXUIElement?,
+           let title = string(of: main, attribute: kAXTitleAttribute as CFString) {
+            return title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        if let windows: [AXUIElement] = children(of: appEl, attribute: kAXWindowsAttribute),
+           let first = windows.first,
+           let title = string(of: first, attribute: kAXTitleAttribute as CFString) {
+            return title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        }
+        return nil
+    }
+
+    private func isGenericWindowTitle(_ title: String) -> Bool {
+        let lowered = title.lowercased()
+        return lowered == "messages" || lowered == "new message" || lowered == "imessage"
+    }
+
+    // MARK: - Workspace observers
 
     private func registerWorkspaceObservers() {
         let center = NSWorkspace.shared.notificationCenter
@@ -91,11 +152,10 @@ final class ActiveThreadWatcher {
             queue: .main
         ) { [weak self] note in
             guard
-                let self,
                 let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                 app.bundleIdentifier == ActiveThreadWatcher.messagesBundleID
             else { return }
-            Task { @MainActor in self.attach() }
+            Task { @MainActor in self?.poll() }
         }
         let launched = center.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
@@ -103,122 +163,23 @@ final class ActiveThreadWatcher {
             queue: .main
         ) { [weak self] note in
             guard
-                let self,
                 let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                 app.bundleIdentifier == ActiveThreadWatcher.messagesBundleID
             else { return }
-            Task { @MainActor in self.attach() }
+            Task { @MainActor in self?.poll() }
         }
-        let terminated = center.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] note in
-            guard
-                let self,
-                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                app.bundleIdentifier == ActiveThreadWatcher.messagesBundleID
-            else { return }
-            Task { @MainActor in
-                self.detach()
-                self.onEvent?(.messagesNotRunning)
-            }
-        }
-        workspaceObservers = [activated, launched, terminated]
+        workspaceObservers = [activated, launched]
     }
 
-    private func attach() {
-        detach()
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: Self.messagesBundleID).first else {
-            print("[Watcher] Messages not running")
-            onEvent?(.messagesNotRunning)
-            return
-        }
-        let pid = app.processIdentifier
-        messagesPID = pid
-        print("[Watcher] attaching to Messages pid=\(pid)")
-        let appEl = AXUIElementCreateApplication(pid)
-        appElement = appEl
+    // MARK: - BFS
 
-        guard let outline = findOutline(in: appEl) else {
-            print("[Watcher] no AXOutline / AXTable / AXList found in Messages — dumping role tree:")
-            dumpRoles(of: appEl, depth: 0, maxDepth: 6)
-            onEvent?(.selectionChanged(displayString: nil))
-            return
-        }
-        observedElement = outline
-        let foundRole = string(of: outline, attribute: kAXRoleAttribute as CFString) ?? "?"
-        print("[Watcher] observing element role=\(foundRole)")
-
-        // Install observer
-        var observer: AXObserver?
-        let result = AXObserverCreate(pid, ActiveThreadWatcher.axObserverCallback, &observer)
-        guard result == .success, let observer else {
-            print("[Watcher] AXObserverCreate failed result=\(result.rawValue)")
-            return
-        }
-
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        let r1 = AXObserverAddNotification(observer, outline, kAXSelectedRowsChangedNotification as CFString, context)
-        let r2 = AXObserverAddNotification(observer, outline, kAXSelectedChildrenChangedNotification as CFString, context)
-        print("[Watcher] observer install: rowsChanged=\(r1.rawValue) childrenChanged=\(r2.rawValue)")
-        CFRunLoopAddSource(
-            CFRunLoopGetCurrent(),
-            AXObserverGetRunLoopSource(observer),
-            .defaultMode
-        )
-        self.observer = observer
-
-        // Emit current state right away.
-        emitSelection(from: outline)
-    }
-
-    /// Diagnostic: prints the AX role tree to stdout so we can see where the
-    /// conversation list actually lives in this build of Messages.
-    private func dumpRoles(of element: AXUIElement, depth: Int, maxDepth: Int) {
-        guard depth <= maxDepth else { return }
-        let role = string(of: element, attribute: kAXRoleAttribute as CFString) ?? "?"
-        let subrole = string(of: element, attribute: kAXSubroleAttribute as CFString) ?? ""
-        let title = string(of: element, attribute: kAXTitleAttribute as CFString) ?? ""
-        let id = string(of: element, attribute: "AXIdentifier" as CFString) ?? ""
-        let pad = String(repeating: "  ", count: depth)
-        var line = "\(pad)- \(role)"
-        if !subrole.isEmpty { line += " (\(subrole))" }
-        if !title.isEmpty { line += " title=\(title)" }
-        if !id.isEmpty { line += " id=\(id)" }
-        print(line)
-        if let kids = children(of: element, attribute: kAXChildrenAttribute) {
-            for kid in kids { dumpRoles(of: kid, depth: depth + 1, maxDepth: maxDepth) }
-        }
-    }
-
-    private func detach() {
-        if let observer, let observedElement {
-            AXObserverRemoveNotification(observer, observedElement, kAXSelectedRowsChangedNotification as CFString)
-            AXObserverRemoveNotification(observer, observedElement, kAXSelectedChildrenChangedNotification as CFString)
-            CFRunLoopRemoveSource(
-                CFRunLoopGetCurrent(),
-                AXObserverGetRunLoopSource(observer),
-                .defaultMode
-            )
-        }
-        observer = nil
-        observedElement = nil
-        appElement = nil
-        messagesPID = nil
-    }
-
-    // MARK: - AX traversal
-
-    /// BFS inside Messages's windows for a list-like element with selectable
-    /// rows. The menu bar exposes AXSelectedChildren too, so we skip that
-    /// entire subtree.
-    private func findOutline(in root: AXUIElement, maxDepth: Int = 18) -> AXUIElement? {
-        let windows: [AXUIElement] = children(of: root, attribute: kAXWindowsAttribute) ?? [root]
-        let preferredRoles: Set<String> = ["AXOutline", "AXTable", "AXList"]
+    private func findElement(
+        in appEl: AXUIElement,
+        where predicate: (AXUIElement) -> Bool,
+        maxDepth: Int = 20
+    ) -> AXUIElement? {
         let skipRoles: Set<String> = ["AXMenuBar", "AXMenu", "AXMenuItem", "AXMenuButton"]
-        var fallback: AXUIElement?
-
+        let windows: [AXUIElement] = children(of: appEl, attribute: kAXWindowsAttribute) ?? [appEl]
         for window in windows {
             var queue: [(AXUIElement, Int)] = [(window, 0)]
             while !queue.isEmpty {
@@ -226,100 +187,32 @@ final class ActiveThreadWatcher {
                 if depth > maxDepth { continue }
                 let role = string(of: node, attribute: kAXRoleAttribute as CFString) ?? ""
                 if skipRoles.contains(role) { continue }
-                let hasSelectedRows = children(of: node, attribute: kAXSelectedRowsAttribute) != nil
-                let hasSelectedChildren = children(of: node, attribute: kAXSelectedChildrenAttribute) != nil
-
-                if preferredRoles.contains(role), hasSelectedRows || hasSelectedChildren {
-                    return node
-                }
-                // Prefer rows over children when falling back — menus / popups
-                // expose AXSelectedChildren and we want to avoid those.
-                if hasSelectedRows, fallback == nil {
-                    fallback = node
-                }
+                if predicate(node) { return node }
                 if let kids = children(of: node, attribute: kAXChildrenAttribute) {
                     for kid in kids { queue.append((kid, depth + 1)) }
-                }
-            }
-        }
-        return fallback
-    }
-
-    fileprivate func emitSelection(from element: AXUIElement) {
-        let selected = children(of: element, attribute: kAXSelectedRowsAttribute)
-            ?? children(of: element, attribute: kAXSelectedChildrenAttribute)
-            ?? []
-        print("[Watcher] selection fired, selectedCount=\(selected.count)")
-        guard let row = selected.first else {
-            onEvent?(.selectionChanged(displayString: nil))
-            return
-        }
-        let display = displayString(for: row)
-        print("[Watcher] selection display=\(display ?? "nil")")
-        onEvent?(.selectionChanged(displayString: display))
-    }
-
-    /// Drill into a row to find the most descriptive label. The row itself
-    /// usually exposes AXValue (a comma-joined contact summary) plus child
-    /// AXStaticText elements for the contact name and last message.
-    private func displayString(for row: AXUIElement) -> String? {
-        if let v = string(of: row, attribute: kAXValueAttribute as CFString), !v.isEmpty {
-            return primaryComponent(of: v)
-        }
-        if let v = string(of: row, attribute: kAXTitleAttribute as CFString), !v.isEmpty {
-            return primaryComponent(of: v)
-        }
-        if let v = string(of: row, attribute: kAXDescriptionAttribute as CFString), !v.isEmpty {
-            return primaryComponent(of: v)
-        }
-        if let kids = children(of: row, attribute: kAXChildrenAttribute) {
-            for kid in kids {
-                if let label = displayString(for: kid) { return label }
-                if let role = string(of: kid, attribute: kAXRoleAttribute as CFString),
-                   role == "AXStaticText",
-                   let v = string(of: kid, attribute: kAXValueAttribute as CFString),
-                   !v.isEmpty {
-                    return primaryComponent(of: v)
                 }
             }
         }
         return nil
     }
 
-    /// AX rows often surface the full conversation summary as one comma-
-    /// separated string ("Momma, 2:14 PM, hey just landed"). Take the head.
-    private func primaryComponent(of raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let comma = trimmed.firstIndex(of: ",") {
-            return String(trimmed[..<comma]).trimmingCharacters(in: .whitespaces)
-        }
-        return trimmed
-    }
-
     // MARK: - AX helpers
 
-    private func string(of element: AXUIElement, attribute: CFString) -> String? {
+    private func attributeValue<T>(of element: AXUIElement, attribute: CFString) -> T? {
         var ref: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, attribute, &ref)
-        guard result == .success else { return nil }
-        return ref as? String
+        guard AXUIElementCopyAttributeValue(element, attribute, &ref) == .success else { return nil }
+        return ref as? T
+    }
+
+    private func string(of element: AXUIElement, attribute: CFString) -> String? {
+        attributeValue(of: element, attribute: attribute)
     }
 
     private func children(of element: AXUIElement, attribute: String) -> [AXUIElement]? {
-        var ref: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &ref)
-        guard result == .success else { return nil }
-        return ref as? [AXUIElement]
+        attributeValue(of: element, attribute: attribute as CFString)
     }
+}
 
-    // MARK: - C callback
-
-    private static let axObserverCallback: AXObserverCallback = { _, element, _, refcon in
-        guard let refcon else { return }
-        let watcher = Unmanaged<ActiveThreadWatcher>.fromOpaque(refcon).takeUnretainedValue()
-        let captured = element
-        Task { @MainActor in
-            watcher.emitSelection(from: captured)
-        }
-    }
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
