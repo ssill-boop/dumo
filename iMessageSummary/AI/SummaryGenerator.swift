@@ -28,7 +28,7 @@ final class SummaryGenerator {
         }
     }
 
-    static let defaultModel = "claude-sonnet-4-20250514"
+    static let defaultModel = "claude-haiku-4-5-20251001"
 
     let apiKey: String
     let model: String
