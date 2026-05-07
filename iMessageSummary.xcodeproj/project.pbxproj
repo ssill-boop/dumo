@@ -18,6 +18,15 @@
 		AA10000000000000000010F4 /* ContactsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A4 /* ContactsRepository.swift */; };
 		AA10000000000000000010F5 /* SummariesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A5 /* SummariesRepository.swift */; };
 		AA10000000000000000020F1 /* SummaryGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000020A1 /* SummaryGenerator.swift */; };
+		AA10000000000000000030F1 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A1 /* AppState.swift */; };
+		AA10000000000000000030F2 /* LocalSummaryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A2 /* LocalSummaryCache.swift */; };
+		AA10000000000000000030F3 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A3 /* SidebarView.swift */; };
+		AA10000000000000000030F4 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A4 /* SummaryView.swift */; };
+		AA10000000000000000030F5 /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A5 /* LoadingView.swift */; };
+		AA10000000000000000030F6 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A6 /* EmptyStateView.swift */; };
+		AA10000000000000000030F7 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A7 /* SearchView.swift */; };
+		AA10000000000000000030F8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A8 /* SettingsView.swift */; };
+		AA10000000000000000030F9 /* SidebarWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A9 /* SidebarWindowController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +44,15 @@
 		AA10000000000000000010A4 /* ContactsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsRepository.swift; sourceTree = "<group>"; };
 		AA10000000000000000010A5 /* SummariesRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummariesRepository.swift; sourceTree = "<group>"; };
 		AA10000000000000000020A1 /* SummaryGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryGenerator.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A1 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A2 /* LocalSummaryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSummaryCache.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A3 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A4 /* SummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryView.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A5 /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A6 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A7 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA10000000000000000030A9 /* SidebarWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWindowController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -126,6 +144,13 @@
 		AA10000000000000000000C9 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000030A3 /* SidebarView.swift */,
+				AA10000000000000000030A4 /* SummaryView.swift */,
+				AA10000000000000000030A5 /* LoadingView.swift */,
+				AA10000000000000000030A6 /* EmptyStateView.swift */,
+				AA10000000000000000030A7 /* SearchView.swift */,
+				AA10000000000000000030A8 /* SettingsView.swift */,
+				AA10000000000000000030A9 /* SidebarWindowController.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -136,6 +161,8 @@
 				AA10000000000000000000A9 /* Message.swift */,
 				AA10000000000000000010A1 /* Contact.swift */,
 				AA10000000000000000010A2 /* Summary.swift */,
+				AA10000000000000000030A1 /* AppState.swift */,
+				AA10000000000000000030A2 /* LocalSummaryCache.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -219,6 +246,15 @@
 				AA10000000000000000010F4 /* ContactsRepository.swift in Sources */,
 				AA10000000000000000010F5 /* SummariesRepository.swift in Sources */,
 				AA10000000000000000020F1 /* SummaryGenerator.swift in Sources */,
+				AA10000000000000000030F1 /* AppState.swift in Sources */,
+				AA10000000000000000030F2 /* LocalSummaryCache.swift in Sources */,
+				AA10000000000000000030F3 /* SidebarView.swift in Sources */,
+				AA10000000000000000030F4 /* SummaryView.swift in Sources */,
+				AA10000000000000000030F5 /* LoadingView.swift in Sources */,
+				AA10000000000000000030F6 /* EmptyStateView.swift in Sources */,
+				AA10000000000000000030F7 /* SearchView.swift in Sources */,
+				AA10000000000000000030F8 /* SettingsView.swift in Sources */,
+				AA10000000000000000030F9 /* SidebarWindowController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
