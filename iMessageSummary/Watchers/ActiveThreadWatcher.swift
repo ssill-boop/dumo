@@ -210,29 +210,36 @@ final class ActiveThreadWatcher {
 
     // MARK: - AX traversal
 
-    /// BFS for an element that has selectable rows (or selectable children).
-    /// iMessage's conversation list is typically an AXOutline / AXTable on
-    /// modern macOS, but we fall back to anything that exposes a selection.
-    private func findOutline(in root: AXUIElement, maxDepth: Int = 16) -> AXUIElement? {
-        var queue: [(AXUIElement, Int)] = [(root, 0)]
+    /// BFS inside Messages's windows for a list-like element with selectable
+    /// rows. The menu bar exposes AXSelectedChildren too, so we skip that
+    /// entire subtree.
+    private func findOutline(in root: AXUIElement, maxDepth: Int = 18) -> AXUIElement? {
+        let windows: [AXUIElement] = children(of: root, attribute: kAXWindowsAttribute) ?? [root]
         let preferredRoles: Set<String> = ["AXOutline", "AXTable", "AXList"]
+        let skipRoles: Set<String> = ["AXMenuBar", "AXMenu", "AXMenuItem", "AXMenuButton"]
         var fallback: AXUIElement?
 
-        while !queue.isEmpty {
-            let (node, depth) = queue.removeFirst()
-            if depth > maxDepth { continue }
-            let role = string(of: node, attribute: kAXRoleAttribute as CFString) ?? ""
-            let hasSelectedRows = children(of: node, attribute: kAXSelectedRowsAttribute) != nil
-            let hasSelectedChildren = children(of: node, attribute: kAXSelectedChildrenAttribute) != nil
+        for window in windows {
+            var queue: [(AXUIElement, Int)] = [(window, 0)]
+            while !queue.isEmpty {
+                let (node, depth) = queue.removeFirst()
+                if depth > maxDepth { continue }
+                let role = string(of: node, attribute: kAXRoleAttribute as CFString) ?? ""
+                if skipRoles.contains(role) { continue }
+                let hasSelectedRows = children(of: node, attribute: kAXSelectedRowsAttribute) != nil
+                let hasSelectedChildren = children(of: node, attribute: kAXSelectedChildrenAttribute) != nil
 
-            if preferredRoles.contains(role), hasSelectedRows || hasSelectedChildren {
-                return node
-            }
-            if (hasSelectedRows || hasSelectedChildren), fallback == nil {
-                fallback = node
-            }
-            if let kids = children(of: node, attribute: kAXChildrenAttribute) {
-                for kid in kids { queue.append((kid, depth + 1)) }
+                if preferredRoles.contains(role), hasSelectedRows || hasSelectedChildren {
+                    return node
+                }
+                // Prefer rows over children when falling back — menus / popups
+                // expose AXSelectedChildren and we want to avoid those.
+                if hasSelectedRows, fallback == nil {
+                    fallback = node
+                }
+                if let kids = children(of: node, attribute: kAXChildrenAttribute) {
+                    for kid in kids { queue.append((kid, depth + 1)) }
+                }
             }
         }
         return fallback
