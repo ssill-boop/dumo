@@ -2,6 +2,7 @@ import Foundation
 
 struct AppConfig {
     let anthropicAPIKey: String?
+    let anthropicModel: String?
     let supabaseURL: URL?
     let supabaseAnonKey: String?
     let machineID: String
@@ -15,6 +16,7 @@ struct AppConfig {
 
     static let envTemplate = """
     ANTHROPIC_API_KEY=
+    ANTHROPIC_MODEL=
     SUPABASE_URL=
     SUPABASE_ANON_KEY=
     MACHINE_ID=
@@ -34,6 +36,7 @@ struct AppConfig {
         let values = parseEnvFile(at: envFileURL)
         return AppConfig(
             anthropicAPIKey: nonEmpty(values["ANTHROPIC_API_KEY"]),
+            anthropicModel: nonEmpty(values["ANTHROPIC_MODEL"]),
             supabaseURL: nonEmpty(values["SUPABASE_URL"]).flatMap(URL.init(string:)),
             supabaseAnonKey: nonEmpty(values["SUPABASE_ANON_KEY"]),
             machineID: nonEmpty(values["MACHINE_ID"]) ?? defaultMachineID()

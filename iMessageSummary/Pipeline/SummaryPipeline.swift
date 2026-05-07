@@ -35,6 +35,13 @@ final class SummaryPipeline {
         ) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        NotificationCenter.default.addObserver(
+            forName: .iMessageSummaryGenerate,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.generateOnDemand() }
+        }
 
         watcher.start { [weak self] event in
             Task { @MainActor in self?.handle(event: event) }
@@ -70,10 +77,11 @@ final class SummaryPipeline {
             state.activeContact = nil
             state.activeHandleID = nil
             state.currentSummary = nil
+            state.pendingMessageCount = 0
             state.viewState = .empty
             return
         }
-        kickOff(query: query)
+        kickOff(query: query, generate: false)
     }
 
     private func handleManualSelect(contact: Contact) {
@@ -82,23 +90,29 @@ final class SummaryPipeline {
         state.activeContactDisplay = contact.bestDisplayName
         state.activeHandleID = contact.phoneOrEmail
         state.searchQuery = ""
-        kickOff(query: contact.phoneOrEmail)
+        kickOff(query: contact.phoneOrEmail, generate: false)
     }
 
     private func refresh() {
         guard let handle = state.activeHandleID else { return }
-        currentTask?.cancel()
-        kickOff(query: handle)
+        kickOff(query: handle, generate: false)
     }
 
-    private func kickOff(query: String) {
+    /// Triggered by the "Generate" / "Update" buttons in the UI.
+    private func generateOnDemand() {
+        guard let handle = state.activeHandleID else { return }
+        kickOff(query: handle, generate: true)
+    }
+
+    private func kickOff(query: String, generate: Bool) {
         currentTask?.cancel()
         let token = UUID()
         currentRunToken = token
-        state.viewState = .loading(phase: "Reading messages…")
+        state.viewState = .loading(phase: generate ? "Generating summary…" : "Reading messages…")
+        if !generate { state.pendingMessageCount = 0 }
         let window = state.messageWindow
         currentTask = Task<Void, Never> { [weak self] in
-            await self?.process(handleQuery: query, window: window, token: token)
+            await self?.process(handleQuery: query, window: window, token: token, generate: generate)
         }
     }
 
@@ -111,7 +125,7 @@ final class SummaryPipeline {
 
     // MARK: - Pipeline
 
-    private func process(handleQuery: String, window: MessageWindow, token: UUID) async {
+    private func process(handleQuery: String, window: MessageWindow, token: UUID, generate: Bool) async {
         let db = state.db
         do {
             try db.open()
@@ -193,6 +207,7 @@ final class SummaryPipeline {
             } else {
                 state.currentSummary = nil
             }
+            state.pendingMessageCount = 0
             state.viewState = .loaded(newMessageCount: 0)
             return
         }
@@ -217,19 +232,34 @@ final class SummaryPipeline {
             return
         }
 
-        print("[Pipeline] fetched \(messages.count) messages (incremental=\(isIncremental))")
+        print("[Pipeline] fetched \(messages.count) messages (incremental=\(isIncremental), generate=\(generate))")
+
+        // Display-only path: surface whatever's cached + the count of pending
+        // messages, but never call the API. The user clicks Generate / Update
+        // to pay for tokens.
+        if !generate {
+            guard isStillCurrent(token) else { return }
+            if let prior {
+                state.currentSummary = prior
+            } else if let localPrior {
+                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
+            } else {
+                state.currentSummary = nil
+            }
+            state.pendingMessageCount = messages.count
+            state.viewState = .loaded(newMessageCount: 0)
+            return
+        }
 
         if messages.isEmpty {
             guard isStillCurrent(token) else { return }
             if let prior {
                 state.currentSummary = prior
-                state.viewState = .loaded(newMessageCount: 0)
             } else if let localPrior {
                 state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
-                state.viewState = .loaded(newMessageCount: 0)
-            } else {
-                state.viewState = .error("No messages found in the selected window.")
             }
+            state.pendingMessageCount = 0
+            state.viewState = .loaded(newMessageCount: 0)
             return
         }
 
@@ -301,6 +331,7 @@ final class SummaryPipeline {
                 // But only push it into the UI if the user is still on this thread.
                 guard isStillCurrent(token) else { return }
                 state.currentSummary = inserted
+                state.pendingMessageCount = 0
                 state.viewState = .loaded(newMessageCount: messages.count)
                 state.isUsingLocalFallback = false
                 Task { await state.reloadSummarizedContacts() }
@@ -323,6 +354,7 @@ final class SummaryPipeline {
         state.cache.write(handle: handle, entry: entry)
         guard isStillCurrent(token) else { return }
         state.currentSummary = synthesizeSummary(from: entry, contact: contact, handle: handle)
+        state.pendingMessageCount = 0
         state.viewState = .loaded(newMessageCount: messages.count)
     }
 

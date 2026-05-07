@@ -11,36 +11,66 @@ struct SummaryView: View {
                 if isPaused {
                     pausedBanner
                 }
-                if newMessageCount > 0 {
-                    Label(
-                        "\(newMessageCount) new message\(newMessageCount == 1 ? "" : "s") included",
-                        systemImage: "sparkles"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-
-                if let summary = state.currentSummary {
-                    bullets(summary.bulletPoints)
-                    if !summary.summaryText.isEmpty {
-                        Divider()
-                        Text(summary.summaryText)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    metadata(summary)
-                } else {
-                    Text("No summary yet.")
-                        .foregroundStyle(.secondary)
-                        .font(.callout)
-                }
-
+                content
                 Spacer(minLength: 0)
             }
             .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Sub-views
+
+    @ViewBuilder
+    private var content: some View {
+        if let summary = state.currentSummary {
+            if state.pendingMessageCount > 0, !isPaused {
+                updateBanner
+            }
+            if newMessageCount > 0 {
+                Label(
+                    "Updated with \(newMessageCount) new message\(newMessageCount == 1 ? "" : "s")",
+                    systemImage: "sparkles"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            bullets(summary.bulletPoints)
+            if !summary.summaryText.isEmpty {
+                Divider()
+                Text(summary.summaryText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            metadata(summary)
+        } else if isPaused {
+            Text("No summary yet. Unpause to generate one.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else if state.pendingMessageCount > 0 {
+            generateInitialSection
+        } else {
+            Text("No recent messages with this contact in the last \(windowDescription).")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var contactHeader: some View {
+        let displayName = state.activeContact?.bestDisplayName
+            ?? state.activeContactDisplay
+            ?? "Unknown"
+        let phone = state.activeContact?.phoneOrEmail ?? state.activeHandleID ?? ""
+
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(displayName).font(.headline)
+            if !phone.isEmpty {
+                Text(phone)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var isPaused: Bool {
@@ -62,19 +92,63 @@ struct SummaryView: View {
         )
     }
 
-    private var contactHeader: some View {
-        let displayName = state.activeContact?.bestDisplayName
-            ?? state.activeContactDisplay
-            ?? "Unknown"
-        let phone = state.activeContact?.phoneOrEmail ?? state.activeHandleID ?? ""
-
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(displayName).font(.headline)
-            if !phone.isEmpty {
-                Text(phone)
+    private var updateBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(state.pendingMessageCount) new message\(state.pendingMessageCount == 1 ? "" : "s")")
+                    .font(.callout.weight(.medium))
+                Text("not yet included in this summary")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Spacer()
+            Button("Update") {
+                NotificationCenter.default.post(name: .iMessageSummaryGenerate, object: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(!state.hasAnthropic)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.accentColor.opacity(0.12))
+        )
+    }
+
+    private var generateInitialSection: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+            Text("No summary yet")
+                .font(.headline)
+            Text("\(state.pendingMessageCount) message\(state.pendingMessageCount == 1 ? "" : "s") from the last \(windowDescription).")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Generate Summary") {
+                NotificationCenter.default.post(name: .iMessageSummaryGenerate, object: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!state.hasAnthropic)
+            if !state.hasAnthropic {
+                Text("Anthropic API key not configured.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    private var windowDescription: String {
+        switch state.messageWindow {
+        case .oneWeek: return "week"
+        case .twoWeeks: return "2 weeks"
+        case .oneMonth: return "month"
         }
     }
 
@@ -129,7 +203,8 @@ enum SummaryActions {
             if let idx = state.allSummarizedContacts.firstIndex(where: { $0.id == updated.id }) {
                 state.allSummarizedContacts[idx] = updated
             }
-            // Unpausing re-runs the pipeline so the user sees fresh bullets.
+            // Unpausing re-runs the lookup so the user sees the latest cached
+            // summary + fresh pending count.
             if !isBlacklisted, state.activeHandleID != nil {
                 NotificationCenter.default.post(name: .iMessageSummaryRefresh, object: nil)
             }
@@ -142,4 +217,5 @@ enum SummaryActions {
 extension Notification.Name {
     static let iMessageSummarySelectContact = Notification.Name("iMessageSummary.selectContact")
     static let iMessageSummaryRefresh = Notification.Name("iMessageSummary.refresh")
+    static let iMessageSummaryGenerate = Notification.Name("iMessageSummary.generate")
 }

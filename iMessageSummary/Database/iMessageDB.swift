@@ -130,6 +130,7 @@ final class iMessageDB {
         WHERE handle.id = ?
           AND message.text IS NOT NULL
           AND message.text != ''
+          AND message.associated_message_type = 0
           AND message.ROWID > ?
         ORDER BY message.date ASC;
         """
@@ -150,6 +151,7 @@ final class iMessageDB {
             WHERE handle.id = ?
               AND message.text IS NOT NULL
               AND message.text != ''
+              AND message.associated_message_type = 0
               AND message.date >= \(cutoff)
             ORDER BY message.date ASC;
             """
@@ -161,6 +163,7 @@ final class iMessageDB {
             WHERE handle.id = ?
               AND message.text IS NOT NULL
               AND message.text != ''
+              AND message.associated_message_type = 0
             ORDER BY message.date ASC;
             """
         }

@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     @Published var viewState: ViewState = .empty
     @Published var searchQuery: String = ""
     @Published var allSummarizedContacts: [Contact] = []
+    @Published var pendingMessageCount: Int = 0
     @Published var permissionStatus: PermissionStatus = .unknown
     @Published var isUsingLocalFallback: Bool
 
@@ -67,7 +68,8 @@ final class AppState: ObservableObject {
         }
 
         if let key = config.anthropicAPIKey {
-            self.generator = SummaryGenerator(apiKey: key)
+            let model = config.anthropicModel ?? SummaryGenerator.defaultModel
+            self.generator = SummaryGenerator(apiKey: key, model: model)
         } else {
             self.generator = nil
         }
