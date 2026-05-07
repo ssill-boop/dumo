@@ -12,6 +12,11 @@
 		AA10000000000000000000F3 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A3 /* AppConfig.swift */; };
 		AA10000000000000000000F8 /* iMessageDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A8 /* iMessageDB.swift */; };
 		AA10000000000000000000F9 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A9 /* Message.swift */; };
+		AA10000000000000000010F1 /* Contact.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A1 /* Contact.swift */; };
+		AA10000000000000000010F2 /* Summary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A2 /* Summary.swift */; };
+		AA10000000000000000010F3 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A3 /* SupabaseClient.swift */; };
+		AA10000000000000000010F4 /* ContactsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A4 /* ContactsRepository.swift */; };
+		AA10000000000000000010F5 /* SummariesRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000010A5 /* SummariesRepository.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,6 +28,11 @@
 		AA10000000000000000000A7 /* iMessageSummary.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMessageSummary.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA10000000000000000000A8 /* iMessageDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageDB.swift; sourceTree = "<group>"; };
 		AA10000000000000000000A9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
+		AA10000000000000000010A1 /* Contact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contact.swift; sourceTree = "<group>"; };
+		AA10000000000000000010A2 /* Summary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summary.swift; sourceTree = "<group>"; };
+		AA10000000000000000010A3 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
+		AA10000000000000000010A4 /* ContactsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsRepository.swift; sourceTree = "<group>"; };
+		AA10000000000000000010A5 /* SummariesRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummariesRepository.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -96,6 +106,9 @@
 		AA10000000000000000000C7 /* Supabase */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000010A3 /* SupabaseClient.swift */,
+				AA10000000000000000010A4 /* ContactsRepository.swift */,
+				AA10000000000000000010A5 /* SummariesRepository.swift */,
 			);
 			path = Supabase;
 			sourceTree = "<group>";
@@ -118,6 +131,8 @@
 			isa = PBXGroup;
 			children = (
 				AA10000000000000000000A9 /* Message.swift */,
+				AA10000000000000000010A1 /* Contact.swift */,
+				AA10000000000000000010A2 /* Summary.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -195,6 +210,11 @@
 				AA10000000000000000000F3 /* AppConfig.swift in Sources */,
 				AA10000000000000000000F8 /* iMessageDB.swift in Sources */,
 				AA10000000000000000000F9 /* Message.swift in Sources */,
+				AA10000000000000000010F1 /* Contact.swift in Sources */,
+				AA10000000000000000010F2 /* Summary.swift in Sources */,
+				AA10000000000000000010F3 /* SupabaseClient.swift in Sources */,
+				AA10000000000000000010F4 /* ContactsRepository.swift in Sources */,
+				AA10000000000000000010F5 /* SummariesRepository.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
