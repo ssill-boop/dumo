@@ -46,9 +46,11 @@ final class ActiveThreadWatcher {
     func start(onEvent: @escaping (Event) -> Void) {
         self.onEvent = onEvent
         guard hasAccessibilityPermission(promptIfNeeded: false) else {
+            print("[Watcher] no AX permission")
             onEvent(.permissionDenied)
             return
         }
+        print("[Watcher] starting")
         isWatching = true
         registerWorkspaceObservers()
         attach()
@@ -128,30 +130,38 @@ final class ActiveThreadWatcher {
     private func attach() {
         detach()
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: Self.messagesBundleID).first else {
+            print("[Watcher] Messages not running")
             onEvent?(.messagesNotRunning)
             return
         }
         let pid = app.processIdentifier
         messagesPID = pid
+        print("[Watcher] attaching to Messages pid=\(pid)")
         let appEl = AXUIElementCreateApplication(pid)
         appElement = appEl
 
         guard let outline = findOutline(in: appEl) else {
-            // iMessage may still be loading its UI; emit current state as nil
-            // and try again on the next activation.
+            print("[Watcher] no AXOutline / AXTable / AXList found in Messages — dumping role tree:")
+            dumpRoles(of: appEl, depth: 0, maxDepth: 6)
             onEvent?(.selectionChanged(displayString: nil))
             return
         }
         observedElement = outline
+        let foundRole = string(of: outline, attribute: kAXRoleAttribute as CFString) ?? "?"
+        print("[Watcher] observing element role=\(foundRole)")
 
         // Install observer
         var observer: AXObserver?
         let result = AXObserverCreate(pid, ActiveThreadWatcher.axObserverCallback, &observer)
-        guard result == .success, let observer else { return }
+        guard result == .success, let observer else {
+            print("[Watcher] AXObserverCreate failed result=\(result.rawValue)")
+            return
+        }
 
         let context = Unmanaged.passUnretained(self).toOpaque()
-        AXObserverAddNotification(observer, outline, kAXSelectedRowsChangedNotification as CFString, context)
-        AXObserverAddNotification(observer, outline, kAXSelectedChildrenChangedNotification as CFString, context)
+        let r1 = AXObserverAddNotification(observer, outline, kAXSelectedRowsChangedNotification as CFString, context)
+        let r2 = AXObserverAddNotification(observer, outline, kAXSelectedChildrenChangedNotification as CFString, context)
+        print("[Watcher] observer install: rowsChanged=\(r1.rawValue) childrenChanged=\(r2.rawValue)")
         CFRunLoopAddSource(
             CFRunLoopGetCurrent(),
             AXObserverGetRunLoopSource(observer),
@@ -161,6 +171,25 @@ final class ActiveThreadWatcher {
 
         // Emit current state right away.
         emitSelection(from: outline)
+    }
+
+    /// Diagnostic: prints the AX role tree to stdout so we can see where the
+    /// conversation list actually lives in this build of Messages.
+    private func dumpRoles(of element: AXUIElement, depth: Int, maxDepth: Int) {
+        guard depth <= maxDepth else { return }
+        let role = string(of: element, attribute: kAXRoleAttribute as CFString) ?? "?"
+        let subrole = string(of: element, attribute: kAXSubroleAttribute as CFString) ?? ""
+        let title = string(of: element, attribute: kAXTitleAttribute as CFString) ?? ""
+        let id = string(of: element, attribute: "AXIdentifier" as CFString) ?? ""
+        let pad = String(repeating: "  ", count: depth)
+        var line = "\(pad)- \(role)"
+        if !subrole.isEmpty { line += " (\(subrole))" }
+        if !title.isEmpty { line += " title=\(title)" }
+        if !id.isEmpty { line += " id=\(id)" }
+        print(line)
+        if let kids = children(of: element, attribute: kAXChildrenAttribute) {
+            for kid in kids { dumpRoles(of: kid, depth: depth + 1, maxDepth: maxDepth) }
+        }
     }
 
     private func detach() {
@@ -181,35 +210,45 @@ final class ActiveThreadWatcher {
 
     // MARK: - AX traversal
 
-    /// BFS for the first AXOutline / AXTable / AXList that has selectable rows.
-    /// iMessage's conversation list is an AXOutline on modern macOS.
-    private func findOutline(in root: AXUIElement, maxDepth: Int = 12) -> AXUIElement? {
+    /// BFS for an element that has selectable rows (or selectable children).
+    /// iMessage's conversation list is typically an AXOutline / AXTable on
+    /// modern macOS, but we fall back to anything that exposes a selection.
+    private func findOutline(in root: AXUIElement, maxDepth: Int = 16) -> AXUIElement? {
         var queue: [(AXUIElement, Int)] = [(root, 0)]
         let preferredRoles: Set<String> = ["AXOutline", "AXTable", "AXList"]
+        var fallback: AXUIElement?
+
         while !queue.isEmpty {
             let (node, depth) = queue.removeFirst()
             if depth > maxDepth { continue }
-            if let role = string(of: node, attribute: kAXRoleAttribute as CFString),
-               preferredRoles.contains(role),
-               (children(of: node, attribute: kAXSelectedRowsAttribute) ?? children(of: node, attribute: kAXSelectedChildrenAttribute)) != nil {
+            let role = string(of: node, attribute: kAXRoleAttribute as CFString) ?? ""
+            let hasSelectedRows = children(of: node, attribute: kAXSelectedRowsAttribute) != nil
+            let hasSelectedChildren = children(of: node, attribute: kAXSelectedChildrenAttribute) != nil
+
+            if preferredRoles.contains(role), hasSelectedRows || hasSelectedChildren {
                 return node
+            }
+            if (hasSelectedRows || hasSelectedChildren), fallback == nil {
+                fallback = node
             }
             if let kids = children(of: node, attribute: kAXChildrenAttribute) {
                 for kid in kids { queue.append((kid, depth + 1)) }
             }
         }
-        return nil
+        return fallback
     }
 
     fileprivate func emitSelection(from element: AXUIElement) {
         let selected = children(of: element, attribute: kAXSelectedRowsAttribute)
             ?? children(of: element, attribute: kAXSelectedChildrenAttribute)
             ?? []
+        print("[Watcher] selection fired, selectedCount=\(selected.count)")
         guard let row = selected.first else {
             onEvent?(.selectionChanged(displayString: nil))
             return
         }
         let display = displayString(for: row)
+        print("[Watcher] selection display=\(display ?? "nil")")
         onEvent?(.selectionChanged(displayString: display))
     }
 
