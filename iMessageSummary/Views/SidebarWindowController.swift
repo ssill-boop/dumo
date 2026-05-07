@@ -21,7 +21,7 @@ final class SidebarWindowController {
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.minSize = NSSize(width: 280, height: 400)
-        panel.maxSize = NSSize(width: 480, height: .greatestFiniteMagnitude)
+        panel.maxSize = NSSize(width: 480, height: CGFloat.greatestFiniteMagnitude)
         panel.contentView = NSHostingView(rootView: SidebarView().environmentObject(state))
         self.panel = panel
         observeFrameChanges()
