@@ -75,7 +75,7 @@ final class AppState: ObservableObject {
         self.isUsingLocalFallback = (self.supabase == nil)
 
         let raw = UserDefaults.standard.string(forKey: Self.messageWindowKey)
-        self.messageWindow = raw.flatMap(MessageWindow.init(rawValue:)) ?? .threeMonths
+        self.messageWindow = raw.flatMap(MessageWindow.init(rawValue:)) ?? .twoWeeks
     }
 
     /// Refresh the list of contacts that already have summaries (used by

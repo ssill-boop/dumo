@@ -29,13 +29,6 @@ final class SummaryPipeline {
             Task { @MainActor in self.handleManualSelect(contact: contact) }
         }
         NotificationCenter.default.addObserver(
-            forName: .iMessageSummaryRegenerate,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.regenerate() }
-        }
-        NotificationCenter.default.addObserver(
             forName: .iMessageSummaryRefresh,
             object: nil,
             queue: .main
@@ -80,7 +73,7 @@ final class SummaryPipeline {
             state.viewState = .empty
             return
         }
-        kickOff(query: query, forceRegenerate: false)
+        kickOff(query: query)
     }
 
     private func handleManualSelect(contact: Contact) {
@@ -92,26 +85,20 @@ final class SummaryPipeline {
         kickOff(query: contact.phoneOrEmail, forceRegenerate: false)
     }
 
-    private func regenerate() {
-        guard let handle = state.activeHandleID else { return }
-        currentTask?.cancel()
-        kickOff(query: handle, forceRegenerate: true)
-    }
-
     private func refresh() {
         guard let handle = state.activeHandleID else { return }
         currentTask?.cancel()
-        kickOff(query: handle, forceRegenerate: false)
+        kickOff(query: handle)
     }
 
-    private func kickOff(query: String, forceRegenerate: Bool) {
+    private func kickOff(query: String) {
         currentTask?.cancel()
         let token = UUID()
         currentRunToken = token
         state.viewState = .loading(phase: "Reading messages…")
         let window = state.messageWindow
         currentTask = Task<Void, Never> { [weak self] in
-            await self?.process(handleQuery: query, window: window, forceRegenerate: forceRegenerate, token: token)
+            await self?.process(handleQuery: query, window: window, token: token)
         }
     }
 
@@ -124,7 +111,7 @@ final class SummaryPipeline {
 
     // MARK: - Pipeline
 
-    private func process(handleQuery: String, window: MessageWindow, forceRegenerate: Bool, token: UUID) async {
+    private func process(handleQuery: String, window: MessageWindow, token: UUID) async {
         let db = state.db
         do {
             try db.open()
@@ -184,18 +171,16 @@ final class SummaryPipeline {
 
         var prior: Summary?
         var localPrior: LocalSummaryCache.Entry?
-        if !forceRegenerate {
-            if let summariesRepo = state.summariesRepo, let contact {
-                do {
-                    prior = try await summariesRepo.latestSummary(contactID: contact.id)
-                    print("[Pipeline] latestSummary -> \(prior == nil ? "nil" : "found row last_rowid=\(prior!.lastMessageRowID)")")
-                } catch {
-                    print("[Pipeline] latestSummary failed: \(error)")
-                }
+        if let summariesRepo = state.summariesRepo, let contact {
+            do {
+                prior = try await summariesRepo.latestSummary(contactID: contact.id)
+                print("[Pipeline] latestSummary -> \(prior == nil ? "nil" : "found row last_rowid=\(prior!.lastMessageRowID)")")
+            } catch {
+                print("[Pipeline] latestSummary failed: \(error)")
             }
-            if prior == nil {
-                localPrior = state.cache.read(handle: handle)
-            }
+        }
+        if prior == nil {
+            localPrior = state.cache.read(handle: handle)
         }
         guard isStillCurrent(token) else { return }
 

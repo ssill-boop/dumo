@@ -13,28 +13,24 @@ struct ContactRow: Hashable {
 }
 
 enum MessageWindow: String, CaseIterable {
+    case oneWeek
+    case twoWeeks
     case oneMonth
-    case threeMonths
-    case sixMonths
-    case oneYear
-    case allTime
 
-    /// Foundation Date at the start of the window; nil for `.allTime`.
+    /// Foundation Date at the start of the window.
     func cutoffDate(now: Date = Date()) -> Date? {
         let component: Calendar.Component
         let value: Int
         switch self {
+        case .oneWeek: component = .weekOfYear; value = -1
+        case .twoWeeks: component = .weekOfYear; value = -2
         case .oneMonth: component = .month; value = -1
-        case .threeMonths: component = .month; value = -3
-        case .sixMonths: component = .month; value = -6
-        case .oneYear: component = .year; value = -1
-        case .allTime: return nil
         }
         return Calendar.current.date(byAdding: component, value: value, to: now)
     }
 
     /// Cutoff in Apple-epoch nanoseconds (the unit the message.date column uses
-    /// on macOS 10.13+). Returns nil for `.allTime`.
+    /// on macOS 10.13+).
     func cutoffAppleEpochNanos(now: Date = Date()) -> Int64? {
         guard let cutoff = cutoffDate(now: now) else { return nil }
         let appleSeconds = cutoff.timeIntervalSince1970 - appleEpochOffsetSeconds

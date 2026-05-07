@@ -17,11 +17,9 @@ struct SettingsView: View {
             Group {
                 Text("Message window").font(.headline)
                 Picker("", selection: $state.messageWindow) {
+                    Text("1 week").tag(MessageWindow.oneWeek)
+                    Text("2 weeks").tag(MessageWindow.twoWeeks)
                     Text("1 month").tag(MessageWindow.oneMonth)
-                    Text("3 months").tag(MessageWindow.threeMonths)
-                    Text("6 months").tag(MessageWindow.sixMonths)
-                    Text("1 year").tag(MessageWindow.oneYear)
-                    Text("All time").tag(MessageWindow.allTime)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
