@@ -82,7 +82,7 @@ final class SummaryPipeline {
         state.activeContactDisplay = contact.bestDisplayName
         state.activeHandleID = contact.phoneOrEmail
         state.searchQuery = ""
-        kickOff(query: contact.phoneOrEmail, forceRegenerate: false)
+        kickOff(query: contact.phoneOrEmail)
     }
 
     private func refresh() {
