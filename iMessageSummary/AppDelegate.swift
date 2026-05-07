@@ -5,6 +5,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         config = AppConfig.load()
+        #if DEBUG
+        iMessageDB.runConsoleSmokeTest()
+        #endif
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

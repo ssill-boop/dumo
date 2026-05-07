@@ -10,6 +10,8 @@
 		AA10000000000000000000F1 /* iMessageSummaryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A1 /* iMessageSummaryApp.swift */; };
 		AA10000000000000000000F2 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A2 /* AppDelegate.swift */; };
 		AA10000000000000000000F3 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A3 /* AppConfig.swift */; };
+		AA10000000000000000000F8 /* iMessageDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A8 /* iMessageDB.swift */; };
+		AA10000000000000000000F9 /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A9 /* Message.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +21,8 @@
 		AA10000000000000000000A5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA10000000000000000000A6 /* iMessageSummary.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iMessageSummary.entitlements; sourceTree = "<group>"; };
 		AA10000000000000000000A7 /* iMessageSummary.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMessageSummary.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA10000000000000000000A8 /* iMessageDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iMessageDB.swift; sourceTree = "<group>"; };
+		AA10000000000000000000A9 /* Message.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +88,7 @@
 		AA10000000000000000000C6 /* Database */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000000A8 /* iMessageDB.swift */,
 			);
 			path = Database;
 			sourceTree = "<group>";
@@ -112,6 +117,7 @@
 		AA10000000000000000000CA /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000000A9 /* Message.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -187,6 +193,8 @@
 				AA10000000000000000000F1 /* iMessageSummaryApp.swift in Sources */,
 				AA10000000000000000000F2 /* AppDelegate.swift in Sources */,
 				AA10000000000000000000F3 /* AppConfig.swift in Sources */,
+				AA10000000000000000000F8 /* iMessageDB.swift in Sources */,
+				AA10000000000000000000F9 /* Message.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
