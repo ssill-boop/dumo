@@ -39,7 +39,9 @@ final class SupabaseClient {
 
     func get<T: Decodable>(_ table: String, query: [URLQueryItem] = []) async throws -> T {
         var components = URLComponents(url: endpoint(table), resolvingAgainstBaseURL: false)!
-        if !query.isEmpty { components.queryItems = query }
+        if !query.isEmpty {
+            components.percentEncodedQueryItems = query.map(Self.encodeForPostgREST)
+        }
         var request = URLRequest(url: components.url!)
         authorize(&request)
         request.httpMethod = "GET"
@@ -57,7 +59,7 @@ final class SupabaseClient {
 
     func update<Body: Encodable, T: Decodable>(_ table: String, query: [URLQueryItem], body: Body) async throws -> T {
         var components = URLComponents(url: endpoint(table), resolvingAgainstBaseURL: false)!
-        components.queryItems = query
+        components.percentEncodedQueryItems = query.map(Self.encodeForPostgREST)
         var request = URLRequest(url: components.url!)
         authorize(&request)
         request.httpMethod = "PATCH"
@@ -93,6 +95,24 @@ final class SupabaseClient {
         } catch {
             throw Error.decoding(error)
         }
+    }
+
+    /// PostgREST treats `+` in URL query strings as a literal space (form-
+    /// encoded behavior), so phone numbers like `+15551234567` never match
+    /// when encoded by URLComponents' default `urlQueryAllowed` set (which
+    /// considers `+` safe). Pre-encode `+` (and anything else outside the
+    /// urlQueryAllowed set) here.
+    private static let postgrestQueryAllowed: CharacterSet = {
+        var set = CharacterSet.urlQueryAllowed
+        set.remove(charactersIn: "+")
+        return set
+    }()
+
+    private static func encodeForPostgREST(_ item: URLQueryItem) -> URLQueryItem {
+        let encoded = item.value.map { value in
+            value.addingPercentEncoding(withAllowedCharacters: postgrestQueryAllowed) ?? value
+        }
+        return URLQueryItem(name: item.name, value: encoded)
     }
 
     private static func makeEncoder() -> JSONEncoder {

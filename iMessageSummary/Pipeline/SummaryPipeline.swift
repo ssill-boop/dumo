@@ -11,6 +11,7 @@ final class SummaryPipeline {
     private let state: AppState
     private let watcher: ActiveThreadWatcher
     private var currentTask: Task<Void, Never>?
+    private var currentRunToken: UUID = UUID()
     private var lastResolvedHandle: String?
 
     init(state: AppState, watcher: ActiveThreadWatcher? = nil) {
@@ -104,22 +105,34 @@ final class SummaryPipeline {
     }
 
     private func kickOff(query: String, forceRegenerate: Bool) {
+        currentTask?.cancel()
+        let token = UUID()
+        currentRunToken = token
         state.viewState = .loading(phase: "Reading messages…")
         let window = state.messageWindow
         currentTask = Task<Void, Never> { [weak self] in
-            await self?.process(handleQuery: query, window: window, forceRegenerate: forceRegenerate)
+            await self?.process(handleQuery: query, window: window, forceRegenerate: forceRegenerate, token: token)
         }
+    }
+
+    /// Returns true only if `token` is still the most recently issued token.
+    /// Every state mutation in `process` is gated on this so a slow
+    /// in-flight run can't clobber state belonging to a newer thread switch.
+    private func isStillCurrent(_ token: UUID) -> Bool {
+        token == currentRunToken
     }
 
     // MARK: - Pipeline
 
-    private func process(handleQuery: String, window: MessageWindow, forceRegenerate: Bool) async {
+    private func process(handleQuery: String, window: MessageWindow, forceRegenerate: Bool, token: UUID) async {
         let db = state.db
         do {
             try db.open()
         } catch {
-            state.viewState = .error("Couldn't open chat.db: \(error)")
-            state.permissionStatus = .missingFullDiskAccess
+            if isStillCurrent(token) {
+                state.viewState = .error("Couldn't open chat.db: \(error)")
+                state.permissionStatus = .missingFullDiskAccess
+            }
             return
         }
         defer { db.close() }
@@ -131,13 +144,18 @@ final class SummaryPipeline {
             } else if let viaContacts = await resolveThroughContacts(displayName: handleQuery, db: db) {
                 row = viaContacts
             } else {
-                state.viewState = .error("No iMessage thread matched '\(handleQuery)'.")
+                if isStillCurrent(token) {
+                    state.viewState = .error("No iMessage thread matched '\(handleQuery)'.")
+                }
                 return
             }
         } catch {
-            state.viewState = .error("chat.db lookup failed: \(error)")
+            if isStillCurrent(token) {
+                state.viewState = .error("chat.db lookup failed: \(error)")
+            }
             return
         }
+        guard isStillCurrent(token) else { return }
         let handle = row.handleID
         let displayName = row.displayName?.nilIfEmpty ?? handleQuery
         state.activeHandleID = handle
@@ -151,16 +169,18 @@ final class SummaryPipeline {
                     phoneOrEmail: handle,
                     displayName: row.displayName?.nilIfEmpty ?? displayName
                 )
+                guard isStillCurrent(token) else { return }
                 contact = resolved
                 state.activeContact = resolved
                 state.isUsingLocalFallback = false
             } catch {
                 print("[Pipeline] Supabase contact lookup failed: \(error); falling back to local cache.")
-                state.isUsingLocalFallback = true
+                if isStillCurrent(token) { state.isUsingLocalFallback = true }
             }
         } else {
-            state.isUsingLocalFallback = true
+            if isStillCurrent(token) { state.isUsingLocalFallback = true }
         }
+        guard isStillCurrent(token) else { return }
 
         var prior: Summary?
         var localPrior: LocalSummaryCache.Entry?
@@ -177,6 +197,7 @@ final class SummaryPipeline {
                 localPrior = state.cache.read(handle: handle)
             }
         }
+        guard isStillCurrent(token) else { return }
 
         // Paused: surface whatever we already have, never call the generator.
         if contact?.isBlacklisted == true {
@@ -205,13 +226,16 @@ final class SummaryPipeline {
                 isIncremental = false
             }
         } catch {
-            state.viewState = .error("Couldn't read messages: \(error)")
+            if isStillCurrent(token) {
+                state.viewState = .error("Couldn't read messages: \(error)")
+            }
             return
         }
 
         print("[Pipeline] fetched \(messages.count) messages (incremental=\(isIncremental))")
 
         if messages.isEmpty {
+            guard isStillCurrent(token) else { return }
             if let prior {
                 state.currentSummary = prior
                 state.viewState = .loaded(newMessageCount: 0)
@@ -225,11 +249,15 @@ final class SummaryPipeline {
         }
 
         guard let generator = state.generator else {
-            state.viewState = .error("Anthropic API key is not configured.")
+            if isStillCurrent(token) {
+                state.viewState = .error("Anthropic API key is not configured.")
+            }
             return
         }
 
-        state.viewState = .loading(phase: "Generating summary…")
+        if isStillCurrent(token) {
+            state.viewState = .loading(phase: "Generating summary…")
+        }
         let output: SummaryGenerator.Output
         do {
             if isIncremental, let prior {
@@ -255,9 +283,15 @@ final class SummaryPipeline {
                 )
             }
         } catch {
-            state.viewState = .error("Summary generation failed: \(error)")
+            if isStillCurrent(token) {
+                state.viewState = .error("Summary generation failed: \(error)")
+            }
             return
         }
+
+        // Newer thread switch happened while we were waiting for the API.
+        // Drop the result rather than overwriting the new selection.
+        guard isStillCurrent(token) else { return }
 
         guard let last = messages.last else {
             state.viewState = .error("Generator returned but message list was empty.")
@@ -278,6 +312,9 @@ final class SummaryPipeline {
                     generated_by: state.config.machineID,
                     model_version: generator.model
                 ))
+                // The insert is always real — it belongs to this contact_id.
+                // But only push it into the UI if the user is still on this thread.
+                guard isStillCurrent(token) else { return }
                 state.currentSummary = inserted
                 state.viewState = .loaded(newMessageCount: messages.count)
                 state.isUsingLocalFallback = false
@@ -285,7 +322,7 @@ final class SummaryPipeline {
                 return
             } catch {
                 print("[Pipeline] Supabase insert failed: \(error); writing to local cache.")
-                state.isUsingLocalFallback = true
+                if isStillCurrent(token) { state.isUsingLocalFallback = true }
             }
         }
 
@@ -299,6 +336,7 @@ final class SummaryPipeline {
             modelVersion: generator.model
         )
         state.cache.write(handle: handle, entry: entry)
+        guard isStillCurrent(token) else { return }
         state.currentSummary = synthesizeSummary(from: entry, contact: contact, handle: handle)
         state.viewState = .loaded(newMessageCount: messages.count)
     }
