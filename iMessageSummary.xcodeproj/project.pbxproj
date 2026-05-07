@@ -27,6 +27,7 @@
 		AA10000000000000000030F7 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A7 /* SearchView.swift */; };
 		AA10000000000000000030F8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A8 /* SettingsView.swift */; };
 		AA10000000000000000030F9 /* SidebarWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000030A9 /* SidebarWindowController.swift */; };
+		AA10000000000000000040F1 /* ActiveThreadWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000040A1 /* ActiveThreadWatcher.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		AA10000000000000000030A7 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		AA10000000000000000030A8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA10000000000000000030A9 /* SidebarWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarWindowController.swift; sourceTree = "<group>"; };
+		AA10000000000000000040A1 /* ActiveThreadWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveThreadWatcher.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +113,7 @@
 		AA10000000000000000000C5 /* Watchers */ = {
 			isa = PBXGroup;
 			children = (
+				AA10000000000000000040A1 /* ActiveThreadWatcher.swift */,
 			);
 			path = Watchers;
 			sourceTree = "<group>";
@@ -255,6 +258,7 @@
 				AA10000000000000000030F7 /* SearchView.swift in Sources */,
 				AA10000000000000000030F8 /* SettingsView.swift in Sources */,
 				AA10000000000000000030F9 /* SidebarWindowController.swift in Sources */,
+				AA10000000000000000040F1 /* ActiveThreadWatcher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
