@@ -391,19 +391,23 @@ final class SummaryPipeline {
     /// Resolves an AX-reported title or a stored contact key into either a
     /// 1:1 thread or a group thread.
     private func resolveThread(handleQuery: String, db: iMessageDB) async throws -> ResolvedThread? {
+        print("[Pipeline] resolveThread query='\(handleQuery)'")
         // 0. Stored Supabase key for a previously-seen group ("group:<guid>").
         //    Used by the search dropdown when the user clicks on a group row.
         if handleQuery.hasPrefix("group:") {
             let guid = String(handleQuery.dropFirst("group:".count))
             if let chat = try db.findChat(byGUID: guid) {
+                print("[Pipeline]   step 0: matched stored group GUID")
                 return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
             }
+            print("[Pipeline]   step 0: stored GUID not found in chat.db")
             return nil
         }
 
         // 1. Try resolving the title against chat.display_name first. Catches
         //    user-named chats whether they're 1:1 or groups.
         if let chat = try db.findChat(matchingDisplayName: handleQuery) {
+            print("[Pipeline]   step 1: chat.display_name match guid=\(chat.guid) handles=\(chat.handleCount)")
             if chat.handleCount > 1 {
                 return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
             }
@@ -415,6 +419,8 @@ final class SummaryPipeline {
                     ?? handleQuery
                 return .oneToOne(handleID: firstHandle, displayName: displayName)
             }
+        } else {
+            print("[Pipeline]   step 1: no chat.display_name match")
         }
 
         // 2. Auto-named groups: chat.display_name is NULL, but iMessage shows
@@ -422,6 +428,7 @@ final class SummaryPipeline {
         //    Alex", or "Veidis +". Parse the title, resolve each name through
         //    Contacts, and find a chat that contains all of them.
         let parsed = parseGroupTitle(handleQuery)
+        print("[Pipeline]   step 2: parsed names=\(parsed.names) hadIndicator=\(parsed.hadGroupIndicator)")
         if parsed.names.count >= 2 {
             var phonePatterns: [String] = []
             for name in parsed.names {
