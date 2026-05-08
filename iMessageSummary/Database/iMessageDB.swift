@@ -124,13 +124,21 @@ final class iMessageDB {
     /// the 1:1 conversations with this contact). Excludes group chats this
     /// person also participates in, so their messages from groups don't leak
     /// into the 1:1 summary.
+    ///
+    /// IMPORTANT: the handle-containment check and the participant-count
+    /// check have to be SEPARATE subqueries. If we filter the JOIN by
+    /// `handle.id = ?` before the GROUP BY, the COUNT only sees the
+    /// queried handle and every group chat appears as a fake 1:1.
     private static let oneToOneChatsSubquery = """
-    SELECT chat.ROWID
-    FROM chat
-    JOIN chat_handle_join ON chat.ROWID = chat_handle_join.chat_id
-    JOIN handle ON chat_handle_join.handle_id = handle.ROWID
-    WHERE handle.id = ?
-    GROUP BY chat.ROWID
+    SELECT chat_handle_join.chat_id
+    FROM chat_handle_join
+    WHERE chat_handle_join.chat_id IN (
+        SELECT chj.chat_id
+        FROM chat_handle_join chj
+        JOIN handle ON chj.handle_id = handle.ROWID
+        WHERE handle.id = ?
+    )
+    GROUP BY chat_handle_join.chat_id
     HAVING COUNT(DISTINCT chat_handle_join.handle_id) = 1
     """
 
