@@ -429,8 +429,8 @@ final class SummaryPipeline {
             // Named 1:1 — derive the handle from the chat's participants.
             let participants = (try? db.participants(ofChatID: chat.chatID)) ?? []
             if let firstHandle = participants.first {
-                let displayName = chat.displayName?.nilIfEmpty
-                    ?? state.activeContactDisplay?.nilIfEmpty
+                let displayName = state.activeContactDisplay?.nilIfEmpty
+                    ?? chat.displayName?.nilIfEmpty
                     ?? handleQuery
                 return .oneToOne(handleID: firstHandle, displayName: displayName)
             }
@@ -478,8 +478,12 @@ final class SummaryPipeline {
             if (try? db.hasOneToOneChat(forHandleID: direct.handleID)) == false {
                 return nil
             }
-            let displayName = direct.displayName?.nilIfEmpty
-                ?? state.activeContactDisplay?.nilIfEmpty
+            // Prefer the AX-reported active title — direct.displayName is
+            // chat.db's chat.display_name, which can be a group's name when
+            // the LIKE %query% match found a multi-handle chat that
+            // happens to contain this contact.
+            let displayName = state.activeContactDisplay?.nilIfEmpty
+                ?? direct.displayName?.nilIfEmpty
                 ?? handleQuery
             return .oneToOne(handleID: direct.handleID, displayName: displayName)
         }
@@ -490,8 +494,8 @@ final class SummaryPipeline {
             if (try? db.hasOneToOneChat(forHandleID: viaContacts.handleID)) == false {
                 return nil
             }
-            let displayName = viaContacts.displayName?.nilIfEmpty
-                ?? state.activeContactDisplay?.nilIfEmpty
+            let displayName = state.activeContactDisplay?.nilIfEmpty
+                ?? viaContacts.displayName?.nilIfEmpty
                 ?? handleQuery
             return .oneToOne(handleID: viaContacts.handleID, displayName: displayName)
         }
