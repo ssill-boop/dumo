@@ -441,9 +441,9 @@ final class SummaryPipeline {
         // 2. Auto-named groups: chat.display_name is NULL, but iMessage shows
         //    a synthetic title like "Sofia & Krišjānis", "Sofia, Krišjānis,
         //    Alex", or "Veidis +". Parse the title, resolve each name through
-        //    Contacts, and find a chat that contains all of them.
+        //    Contacts, and find a chat that contains them.
         let parsed = parseGroupTitle(handleQuery)
-        print("[Pipeline]   step 2: parsed names=\(parsed.names) hadIndicator=\(parsed.hadGroupIndicator)")
+        print("[Pipeline]   step 2: parsed names=\(parsed.names) additional=\(parsed.additionalCount) hadIndicator=\(parsed.hadGroupIndicator)")
         if parsed.names.count >= 2 {
             var phonePatterns: [String] = []
             for name in parsed.names {
@@ -452,19 +452,27 @@ final class SummaryPipeline {
                     phonePatterns.append(first)
                 }
             }
-            if phonePatterns.count >= 2,
-               let chat = try? db.findGroupChat(containing: phonePatterns) {
+            // Even with just 1 resolved pattern we can still locate the right
+            // group if we know the expected handle count (parsed names + tail).
+            if !phonePatterns.isEmpty,
+               let chat = try? db.findGroupChat(
+                   containing: phonePatterns,
+                   expectedHandleCount: parsed.expectedHandleCount
+               ) {
                 return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
             }
         }
 
         // 2b. Only one name parseable, but the original title had a group
         //     indicator (e.g. "Veidis +" or "Sofia + 3 others"). Find any
-        //     group containing that one known member; pick the most-recent.
+        //     group containing that one known member; smallest-first.
         if parsed.names.count == 1, parsed.hadGroupIndicator {
             let candidates = await state.contactsResolver.handles(forDisplayName: parsed.names[0])
             for candidate in candidates {
-                if let chat = try? db.findGroupChat(containing: [candidate]) {
+                if let chat = try? db.findGroupChat(
+                    containing: [candidate],
+                    expectedHandleCount: parsed.expectedHandleCount
+                ) {
                     return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
                 }
             }
@@ -503,46 +511,66 @@ final class SummaryPipeline {
         return nil
     }
 
+    private struct ParsedGroupTitle {
+        let names: [String]
+        let additionalCount: Int      // Captured from "& N others" / "+ N"
+        let hadGroupIndicator: Bool
+
+        /// Best estimate of the chat's distinct handle count, for narrowing
+        /// down findGroupChat when multiple groups share members. nil when
+        /// we can't reliably guess (e.g. "Veidis +" with no number).
+        var expectedHandleCount: Int? {
+            let total = names.count + additionalCount
+            return total >= 2 ? total : nil
+        }
+    }
+
     /// Splits an iMessage auto-generated group title into participant names.
-    /// Returns the parsed names plus a flag indicating whether the original
-    /// title had any group-indicating syntax (`&`, `,`, or a trailing `+`).
-    /// The flag lets callers route titles like "Veidis +" — where only one
-    /// name is parseable — to the group path instead of a 1:1 lookup.
-    private func parseGroupTitle(_ title: String) -> (names: [String], hadGroupIndicator: Bool) {
+    /// Captures the "& N others" / "+ N" tail so we can disambiguate among
+    /// multiple groups whose members overlap with the parsed names.
+    private func parseGroupTitle(_ title: String) -> ParsedGroupTitle {
         var t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         var hadIndicator = false
+        var additional = 0
 
-        // 1. Strip a trailing " & N others" / " + N more" / " and N others"
-        //    suffix (case-insensitive).
+        // 1. " & N others" / " + N more" / " and N others"
         if let regex = try? NSRegularExpression(
-            pattern: #"\s+(?:&|\+|and)\s+\d+\s+(?:other|others|more)\s*$"#,
+            pattern: #"\s+(?:&|\+|and)\s+(\d+)\s+(?:other|others|more)\s*$"#,
             options: .caseInsensitive
         ) {
             let range = NSRange(t.startIndex..., in: t)
-            let stripped = regex.stringByReplacingMatches(in: t, range: range, withTemplate: "")
-            if stripped != t { hadIndicator = true; t = stripped }
+            if let match = regex.firstMatch(in: t, range: range) {
+                if match.numberOfRanges > 1, let r = Range(match.range(at: 1), in: t),
+                   let n = Int(t[r]) {
+                    additional = n
+                }
+                t = (t as NSString).replacingCharacters(in: match.range, with: "")
+                hadIndicator = true
+            }
         }
 
-        // 2. Strip a bare trailing " +" or " + N" (no "more"/"others" suffix).
-        //    Catches iMessage's narrow-title form "Veidis +" or "Sofia + 2".
-        if let regex = try? NSRegularExpression(pattern: #"\s+\+\s*\d*\s*$"#) {
+        // 2. Bare " +" or " + N" (no "others"/"more" suffix).
+        if let regex = try? NSRegularExpression(pattern: #"\s+\+\s*(\d*)\s*$"#) {
             let range = NSRange(t.startIndex..., in: t)
-            let stripped = regex.stringByReplacingMatches(in: t, range: range, withTemplate: "")
-            if stripped != t { hadIndicator = true; t = stripped }
+            if let match = regex.firstMatch(in: t, range: range) {
+                if match.numberOfRanges > 1, let r = Range(match.range(at: 1), in: t) {
+                    let s = String(t[r])
+                    if let n = Int(s), n > 0 { additional = n }
+                }
+                t = (t as NSString).replacingCharacters(in: match.range, with: "")
+                hadIndicator = true
+            }
         }
 
-        // 3. Detect remaining "&" / "," indicators (handled by the split).
-        if t.contains("&") || t.contains(",") {
-            hadIndicator = true
-        }
+        // 3. Remaining "&" / "," indicators are handled by the split itself.
+        if t.contains("&") || t.contains(",") { hadIndicator = true }
 
-        // 4. Split on "&" or ","; trim; drop empties.
         let separators = CharacterSet(charactersIn: ",&")
         let names = t
             .components(separatedBy: separators)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        return (names, hadIndicator)
+        return ParsedGroupTitle(names: names, additionalCount: additional, hadGroupIndicator: hadIndicator)
     }
 
     private func makeGroupThread(chat: iMessageDB.ChatInfo, fallbackName: String, db: iMessageDB) async -> ResolvedThread {

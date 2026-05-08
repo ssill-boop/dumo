@@ -177,13 +177,32 @@ final class iMessageDB {
     /// Finds a multi-handle chat that contains every supplied handle pattern.
     /// `handlePatterns` are typically last-N digits of phone numbers (or full
     /// emails); each is matched against `handle.id` with LIKE %pattern%.
-    /// Used to pin down which group a Catalyst-Messages auto-name refers to
-    /// when chat.display_name is NULL. Accepts 1+ patterns; with 1 pattern
-    /// it returns the most-recently-active group containing that handle
-    /// (used for "Veidis +"-style titles where iMessage shows only one
-    /// member's name).
-    func findGroupChat(containing handlePatterns: [String]) throws -> ChatInfo? {
+    ///
+    /// When `expectedHandleCount` is provided, the SQL prefers chats whose
+    /// participant count exactly matches it (so the smaller "Sina, Sofia &
+    /// Brandon" group wins over a larger group that also contains all three).
+    /// If no chat matches the exact count, falls back to any group containing
+    /// the patterns, smallest-first.
+    func findGroupChat(containing handlePatterns: [String], expectedHandleCount: Int? = nil) throws -> ChatInfo? {
         guard !handlePatterns.isEmpty else { return nil }
+        if let expected = expectedHandleCount, expected > 1 {
+            if let exact = try findGroupChatRaw(
+                containing: handlePatterns,
+                havingHandleCount: "= \(expected)"
+            ) {
+                return exact
+            }
+        }
+        return try findGroupChatRaw(
+            containing: handlePatterns,
+            havingHandleCount: "> 1"
+        )
+    }
+
+    private func findGroupChatRaw(
+        containing handlePatterns: [String],
+        havingHandleCount: String
+    ) throws -> ChatInfo? {
         let containmentClauses = handlePatterns.map { _ in
             """
             chat.ROWID IN (
@@ -201,8 +220,8 @@ final class iMessageDB {
         LEFT JOIN chat_handle_join ON chat.ROWID = chat_handle_join.chat_id
         WHERE \(containmentClauses.joined(separator: " AND "))
         GROUP BY chat.ROWID
-        HAVING handle_count > 1
-        ORDER BY chat.ROWID DESC
+        HAVING handle_count \(havingHandleCount)
+        ORDER BY handle_count ASC, chat.ROWID DESC
         LIMIT 1;
         """
         var result: ChatInfo?
