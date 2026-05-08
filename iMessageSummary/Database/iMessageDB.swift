@@ -177,10 +177,13 @@ final class iMessageDB {
     /// Finds a multi-handle chat that contains every supplied handle pattern.
     /// `handlePatterns` are typically last-N digits of phone numbers (or full
     /// emails); each is matched against `handle.id` with LIKE %pattern%.
-    /// Used to pin down which group a Catalyst-Messages auto-name like
-    /// "Sofia & Krišjānis" refers to when chat.display_name is NULL.
+    /// Used to pin down which group a Catalyst-Messages auto-name refers to
+    /// when chat.display_name is NULL. Accepts 1+ patterns; with 1 pattern
+    /// it returns the most-recently-active group containing that handle
+    /// (used for "Veidis +"-style titles where iMessage shows only one
+    /// member's name).
     func findGroupChat(containing handlePatterns: [String]) throws -> ChatInfo? {
-        guard handlePatterns.count >= 2 else { return nil }
+        guard !handlePatterns.isEmpty else { return nil }
         let containmentClauses = handlePatterns.map { _ in
             """
             chat.ROWID IN (
@@ -219,33 +222,41 @@ final class iMessageDB {
         return result
     }
 
-    /// Looks up a chat (group or 1:1) by its `chat.display_name`, case-
-    /// insensitive. Returns the most-recently-created match. Used to
-    /// detect group chats from the AX-reported title.
+    /// Looks up a chat (group or 1:1) by its `chat.display_name`. Comparison
+    /// happens in Swift after Unicode normalization (NFC) and case folding,
+    /// so emoji-bearing or accented names match consistently — SQLite's
+    /// LOWER() is ASCII-only and would miss those.
     func findChat(matchingDisplayName name: String) throws -> ChatInfo? {
+        let target = name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+        guard !target.isEmpty else { return nil }
+
         let sql = """
         SELECT chat.ROWID, chat.guid, chat.display_name,
                COUNT(DISTINCT chat_handle_join.handle_id) AS handle_count
         FROM chat
         LEFT JOIN chat_handle_join ON chat.ROWID = chat_handle_join.chat_id
-        WHERE LOWER(chat.display_name) = LOWER(?)
+        WHERE chat.display_name IS NOT NULL AND chat.display_name != ''
         GROUP BY chat.ROWID
-        ORDER BY chat.ROWID DESC
-        LIMIT 1;
+        ORDER BY chat.ROWID DESC;
         """
-        var result: ChatInfo?
+        var candidates: [ChatInfo] = []
         try prepare(sql) { stmt in
-            sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT)
-            if sqlite3_step(stmt) == SQLITE_ROW {
-                result = ChatInfo(
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                candidates.append(ChatInfo(
                     chatID: sqlite3_column_int64(stmt, 0),
                     guid: readText(stmt, column: 1) ?? "",
                     displayName: readText(stmt, column: 2),
                     handleCount: Int(sqlite3_column_int(stmt, 3))
-                )
+                ))
             }
         }
-        return result
+        return candidates.first { chat in
+            guard let raw = chat.displayName else { return false }
+            return raw.precomposedStringWithCanonicalMapping.lowercased() == target
+        }
     }
 
     /// Distinct handle.id values for a given chat, used to attribute group
