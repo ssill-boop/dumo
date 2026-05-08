@@ -39,7 +39,9 @@ private struct SummaryContactRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(contact.bestDisplayName).font(.body)
-                Text(contact.phoneOrEmail).font(.caption).foregroundStyle(.secondary)
+                Text(contact.phoneOrEmail.hasPrefix("group:") ? "Group chat" : contact.phoneOrEmail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             if contact.isBlacklisted {

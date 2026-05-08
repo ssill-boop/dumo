@@ -12,7 +12,6 @@ final class SummaryPipeline {
     private let watcher: ActiveThreadWatcher
     private var currentTask: Task<Void, Never>?
     private var currentRunToken: UUID = UUID()
-    private var lastResolvedHandle: String?
 
     init(state: AppState, watcher: ActiveThreadWatcher? = nil) {
         self.state = state
@@ -125,6 +124,43 @@ final class SummaryPipeline {
 
     // MARK: - Pipeline
 
+    private enum ResolvedThread {
+        case oneToOne(handleID: String, displayName: String)
+        case group(chatID: Int64, chatGUID: String, displayName: String, participantNames: [String: String])
+
+        /// Stable key for Supabase contacts.phone_or_email and the local cache.
+        var supabaseKey: String {
+            switch self {
+            case .oneToOne(let h, _): return h
+            case .group(_, let g, _, _): return "group:\(g)"
+            }
+        }
+
+        var displayName: String {
+            switch self {
+            case .oneToOne(_, let d), .group(_, _, let d, _): return d
+            }
+        }
+
+        var contextLine: String {
+            switch self {
+            case .oneToOne(let h, let d):
+                return "Contact: \(d) (\(h))"
+            case .group(_, _, let d, let names):
+                let parts = names.values.sorted()
+                let total = parts.count + 1 // including you
+                return "Group chat: \(d) (\(total) participants: \(parts.joined(separator: ", ")), and you)"
+            }
+        }
+
+        var threadKind: String {
+            switch self {
+            case .oneToOne: return "conversation thread"
+            case .group: return "group chat thread"
+            }
+        }
+    }
+
     private func process(handleQuery: String, window: MessageWindow, token: UUID, generate: Bool) async {
         let db = state.db
         do {
@@ -138,32 +174,15 @@ final class SummaryPipeline {
         }
         defer { db.close() }
 
-        // Named groups in chat.db (e.g. user-titled "Roommates", or auto-named
-        // "Sofia & Krisjanis" when iMessage has stored a display_name) get
-        // caught here by counting participants in the matching chat.
-        if let count = try? db.handleCountForChat(displayName: handleQuery), count > 1 {
-            if isStillCurrent(token) {
-                state.activeContact = nil
-                state.activeHandleID = nil
-                state.currentSummary = nil
-                state.pendingMessageCount = 0
-                state.viewState = .error("Group chats aren't yet supported (\(count) participants). Open a one-on-one conversation to summarize it.")
-            }
-            return
-        }
-
-        let row: ContactRow
+        let thread: ResolvedThread
         do {
-            if let direct = try db.findContact(matching: handleQuery) {
-                row = direct
-            } else if let viaContacts = await resolveThroughContacts(displayName: handleQuery, db: db) {
-                row = viaContacts
-            } else {
+            guard let resolved = try await resolveThread(handleQuery: handleQuery, db: db) else {
                 if isStillCurrent(token) {
                     state.viewState = .error("No iMessage thread matched '\(handleQuery)'.")
                 }
                 return
             }
+            thread = resolved
         } catch {
             if isStillCurrent(token) {
                 state.viewState = .error("chat.db lookup failed: \(error)")
@@ -171,41 +190,16 @@ final class SummaryPipeline {
             return
         }
 
-        // Even if the handle resolves cleanly, refuse to summarize unless
-        // they have at least one 1:1 chat with us. Catches the case where
-        // someone we only ever message in groups gets resolved by Contacts
-        // because their name is in the AX title.
-        if (try? db.hasOneToOneChat(forHandleID: row.handleID)) == false {
-            if isStillCurrent(token) {
-                state.activeContact = nil
-                state.activeHandleID = nil
-                state.currentSummary = nil
-                state.pendingMessageCount = 0
-                state.viewState = .error("This person isn't in any one-on-one thread with you (group chats aren't yet supported).")
-            }
-            return
-        }
         guard isStillCurrent(token) else { return }
-        let handle = row.handleID
-        // Prefer (in this order): the chat.db chat.display_name, the
-        // AX-reported friendly name we already have on AppState, then the
-        // raw query as a last resort. This keeps "Sofia Sill" sticky even
-        // when the user clicks Generate (which re-runs the pipeline with
-        // handleQuery == phone number, which would otherwise become the
-        // displayName and overwrite the friendly name in Supabase).
-        let displayName = row.displayName?.nilIfEmpty
-            ?? state.activeContactDisplay?.nilIfEmpty
-            ?? handleQuery
-        state.activeHandleID = handle
-        state.activeContactDisplay = displayName
-        lastResolvedHandle = handle
+        state.activeHandleID = thread.supabaseKey
+        state.activeContactDisplay = thread.displayName
 
         var contact: Contact?
         if let repo = state.contactsRepo {
             do {
                 let resolved = try await repo.findOrCreate(
-                    phoneOrEmail: handle,
-                    displayName: row.displayName?.nilIfEmpty ?? displayName
+                    phoneOrEmail: thread.supabaseKey,
+                    displayName: thread.displayName
                 )
                 guard isStillCurrent(token) else { return }
                 contact = resolved
@@ -231,7 +225,7 @@ final class SummaryPipeline {
             }
         }
         if prior == nil {
-            localPrior = state.cache.read(handle: handle)
+            localPrior = state.cache.read(handle: thread.supabaseKey)
         }
         guard isStillCurrent(token) else { return }
 
@@ -240,7 +234,7 @@ final class SummaryPipeline {
             if let prior {
                 state.currentSummary = prior
             } else if let localPrior {
-                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
+                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: thread.supabaseKey)
             } else {
                 state.currentSummary = nil
             }
@@ -252,16 +246,13 @@ final class SummaryPipeline {
         let messages: [Message]
         let isIncremental: Bool
         do {
-            if let prior {
-                messages = try db.fetchMessages(forHandleID: handle, sinceRowID: prior.lastMessageRowID)
-                isIncremental = true
-            } else if let localPrior {
-                messages = try db.fetchMessages(forHandleID: handle, sinceRowID: localPrior.lastMessageRowID)
-                isIncremental = true
-            } else {
-                messages = try db.fetchMessages(forHandleID: handle, window: window)
-                isIncremental = false
-            }
+            (messages, isIncremental) = try fetchMessages(
+                thread: thread,
+                prior: prior,
+                localPrior: localPrior,
+                window: window,
+                db: db
+            )
         } catch {
             if isStillCurrent(token) {
                 state.viewState = .error("Couldn't read messages: \(error)")
@@ -279,7 +270,7 @@ final class SummaryPipeline {
             if let prior {
                 state.currentSummary = prior
             } else if let localPrior {
-                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
+                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: thread.supabaseKey)
             } else {
                 state.currentSummary = nil
             }
@@ -293,7 +284,7 @@ final class SummaryPipeline {
             if let prior {
                 state.currentSummary = prior
             } else if let localPrior {
-                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
+                state.currentSummary = synthesizeSummary(from: localPrior, contact: contact, handle: thread.supabaseKey)
             }
             state.pendingMessageCount = 0
             state.viewState = .loaded(newMessageCount: 0)
@@ -310,28 +301,33 @@ final class SummaryPipeline {
         if isStillCurrent(token) {
             state.viewState = .loading(phase: "Generating summary…")
         }
+
+        let rows = messages.map { msg -> SummaryGenerator.Row in
+            (msg, senderLabel(for: msg, in: thread))
+        }
+
         let output: SummaryGenerator.Output
         do {
             if isIncremental, let prior {
                 output = try await generator.generateUpdate(
-                    displayName: displayName,
-                    handle: handle,
+                    contextLine: thread.contextLine,
+                    threadKind: thread.threadKind,
                     prior: prior,
-                    newMessages: messages
+                    newRows: rows
                 )
             } else if isIncremental, let localPrior {
-                let stub = synthesizeSummary(from: localPrior, contact: contact, handle: handle)
+                let stub = synthesizeSummary(from: localPrior, contact: contact, handle: thread.supabaseKey)
                 output = try await generator.generateUpdate(
-                    displayName: displayName,
-                    handle: handle,
+                    contextLine: thread.contextLine,
+                    threadKind: thread.threadKind,
                     prior: stub,
-                    newMessages: messages
+                    newRows: rows
                 )
             } else {
                 output = try await generator.generateInitial(
-                    displayName: displayName,
-                    handle: handle,
-                    messages: messages
+                    contextLine: thread.contextLine,
+                    threadKind: thread.threadKind,
+                    rows: rows
                 )
             }
         } catch {
@@ -341,10 +337,7 @@ final class SummaryPipeline {
             return
         }
 
-        // Newer thread switch happened while we were waiting for the API.
-        // Drop the result rather than overwriting the new selection.
         guard isStillCurrent(token) else { return }
-
         guard let last = messages.last else {
             state.viewState = .error("Generator returned but message list was empty.")
             return
@@ -364,8 +357,6 @@ final class SummaryPipeline {
                     generated_by: state.config.machineID,
                     model_version: generator.model
                 ))
-                // The insert is always real — it belongs to this contact_id.
-                // But only push it into the UI if the user is still on this thread.
                 guard isStillCurrent(token) else { return }
                 state.currentSummary = inserted
                 state.pendingMessageCount = 0
@@ -388,11 +379,136 @@ final class SummaryPipeline {
             generatedBy: state.config.machineID,
             modelVersion: generator.model
         )
-        state.cache.write(handle: handle, entry: entry)
+        state.cache.write(handle: thread.supabaseKey, entry: entry)
         guard isStillCurrent(token) else { return }
-        state.currentSummary = synthesizeSummary(from: entry, contact: contact, handle: handle)
+        state.currentSummary = synthesizeSummary(from: entry, contact: contact, handle: thread.supabaseKey)
         state.pendingMessageCount = 0
         state.viewState = .loaded(newMessageCount: messages.count)
+    }
+
+    // MARK: - Resolution & helpers
+
+    /// Resolves an AX-reported title or a stored contact key into either a
+    /// 1:1 thread or a group thread.
+    private func resolveThread(handleQuery: String, db: iMessageDB) async throws -> ResolvedThread? {
+        // 0. Stored Supabase key for a previously-seen group ("group:<guid>").
+        //    Used by the search dropdown when the user clicks on a group row.
+        if handleQuery.hasPrefix("group:") {
+            let guid = String(handleQuery.dropFirst("group:".count))
+            if let chat = try db.findChat(byGUID: guid) {
+                return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
+            }
+            return nil
+        }
+
+        // 1. Try resolving the title against chat.display_name first. Catches
+        //    user-named chats whether they're 1:1 or groups.
+        if let chat = try db.findChat(matchingDisplayName: handleQuery) {
+            if chat.handleCount > 1 {
+                return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
+            }
+            // Named 1:1 — derive the handle from the chat's participants.
+            let participants = (try? db.participants(ofChatID: chat.chatID)) ?? []
+            if let firstHandle = participants.first {
+                let displayName = chat.displayName?.nilIfEmpty
+                    ?? state.activeContactDisplay?.nilIfEmpty
+                    ?? handleQuery
+                return .oneToOne(handleID: firstHandle, displayName: displayName)
+            }
+        }
+
+        // 2. Direct chat.db handle lookup (works when the AX query is a phone
+        //    or email, e.g. on subsequent re-runs after we've cached the
+        //    handle on AppState.activeHandleID).
+        if let direct = try db.findContact(matching: handleQuery) {
+            // Refuse if this person only appears in group chats with us.
+            if (try? db.hasOneToOneChat(forHandleID: direct.handleID)) == false {
+                return nil
+            }
+            let displayName = direct.displayName?.nilIfEmpty
+                ?? state.activeContactDisplay?.nilIfEmpty
+                ?? handleQuery
+            return .oneToOne(handleID: direct.handleID, displayName: displayName)
+        }
+
+        // 3. Contacts framework: AX gave us a person's name and chat.db only
+        //    knows them by phone.
+        if let viaContacts = await resolveThroughContacts(displayName: handleQuery, db: db) {
+            if (try? db.hasOneToOneChat(forHandleID: viaContacts.handleID)) == false {
+                return nil
+            }
+            let displayName = viaContacts.displayName?.nilIfEmpty
+                ?? state.activeContactDisplay?.nilIfEmpty
+                ?? handleQuery
+            return .oneToOne(handleID: viaContacts.handleID, displayName: displayName)
+        }
+
+        return nil
+    }
+
+    private func makeGroupThread(chat: iMessageDB.ChatInfo, fallbackName: String, db: iMessageDB) async -> ResolvedThread {
+        let participantHandles = (try? db.participants(ofChatID: chat.chatID)) ?? []
+        var names: [String: String] = [:]
+        for handle in participantHandles {
+            let resolved = await state.contactsResolver.displayName(forHandle: handle) ?? handle
+            names[handle] = resolved
+        }
+        let displayName = chat.displayName?.nilIfEmpty
+            ?? autoGroupName(participantNames: Array(names.values))
+            ?? fallbackName
+        return .group(
+            chatID: chat.chatID,
+            chatGUID: chat.guid,
+            displayName: displayName,
+            participantNames: names
+        )
+    }
+
+    private func autoGroupName(participantNames: [String]) -> String? {
+        let sorted = participantNames.sorted()
+        guard !sorted.isEmpty else { return nil }
+        if sorted.count <= 3 { return sorted.joined(separator: ", ") }
+        return sorted.prefix(2).joined(separator: ", ") + " & \(sorted.count - 2) others"
+    }
+
+    private func fetchMessages(
+        thread: ResolvedThread,
+        prior: Summary?,
+        localPrior: LocalSummaryCache.Entry?,
+        window: MessageWindow,
+        db: iMessageDB
+    ) throws -> (messages: [Message], isIncremental: Bool) {
+        switch thread {
+        case .oneToOne(let handle, _):
+            if let prior {
+                return (try db.fetchMessages(forHandleID: handle, sinceRowID: prior.lastMessageRowID), true)
+            }
+            if let localPrior {
+                return (try db.fetchMessages(forHandleID: handle, sinceRowID: localPrior.lastMessageRowID), true)
+            }
+            return (try db.fetchMessages(forHandleID: handle, window: window), false)
+        case .group(let chatID, _, _, _):
+            if let prior {
+                return (try db.fetchMessages(forChatID: chatID, sinceRowID: prior.lastMessageRowID), true)
+            }
+            if let localPrior {
+                return (try db.fetchMessages(forChatID: chatID, sinceRowID: localPrior.lastMessageRowID), true)
+            }
+            return (try db.fetchMessages(forChatID: chatID, window: window), false)
+        }
+    }
+
+    private func senderLabel(for message: Message, in thread: ResolvedThread) -> String {
+        if message.isFromMe { return "Me" }
+        switch thread {
+        case .oneToOne(_, let displayName):
+            return displayName
+        case .group(_, _, _, let names):
+            if let h = message.senderHandleID, let name = names[h] {
+                return name
+            }
+            return message.senderHandleID ?? "Unknown"
+        }
     }
 
     /// chat.db has no name table — Catalyst Messages shows names from

@@ -6,7 +6,8 @@ import Foundation
 @MainActor
 final class ContactsResolver {
     private let store = CNContactStore()
-    private var cache: [String: [String]] = [:]
+    private var handleCache: [String: [String]] = [:]
+    private var nameCache: [String: String?] = [:]
 
     /// Returns chat.db-style lookup patterns (digits-only or email) for the
     /// given display name. Empty if Contacts permission is denied or no
@@ -14,11 +15,27 @@ final class ContactsResolver {
     func handles(forDisplayName name: String) async -> [String] {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-        if let cached = cache[trimmed] { return cached }
+        if let cached = handleCache[trimmed] { return cached }
         guard await ensureAccess() else { return [] }
         let patterns = lookup(name: trimmed)
-        cache[trimmed] = patterns
+        handleCache[trimmed] = patterns
         return patterns
+    }
+
+    /// Reverse lookup: given a chat.db handle (phone or email), return the
+    /// best display name from Contacts. Returns nil if Contacts can't find
+    /// them. Used to attribute group-chat messages by participant name.
+    func displayName(forHandle handle: String) async -> String? {
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let cached = nameCache[trimmed] { return cached }
+        guard await ensureAccess() else {
+            nameCache[trimmed] = nil
+            return nil
+        }
+        let resolved = lookupName(handle: trimmed)
+        nameCache[trimmed] = resolved
+        return resolved
     }
 
     private func ensureAccess() async -> Bool {
@@ -37,6 +54,33 @@ final class ContactsResolver {
         @unknown default:
             return false
         }
+    }
+
+    private func lookupName(handle: String) -> String? {
+        let predicate: NSPredicate
+        if handle.contains("@") {
+            predicate = CNContact.predicateForContacts(matchingEmailAddress: handle)
+        } else {
+            predicate = CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: handle))
+        }
+        let keys: [CNKeyDescriptor] = [
+            CNContactGivenNameKey as CNKeyDescriptor,
+            CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactNicknameKey as CNKeyDescriptor,
+        ]
+        guard
+            let contacts = try? store.unifiedContacts(matching: predicate, keysToFetch: keys),
+            let first = contacts.first
+        else {
+            return nil
+        }
+        if !first.nickname.isEmpty {
+            return first.nickname
+        }
+        let combined = [first.givenName, first.familyName]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return combined.isEmpty ? nil : combined
     }
 
     private func lookup(name: String) -> [String] {

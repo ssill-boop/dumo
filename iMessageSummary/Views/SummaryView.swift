@@ -61,12 +61,14 @@ struct SummaryView: View {
         let displayName = state.activeContact?.bestDisplayName
             ?? state.activeContactDisplay
             ?? "Unknown"
-        let phone = state.activeContact?.phoneOrEmail ?? state.activeHandleID ?? ""
+        let raw = state.activeContact?.phoneOrEmail ?? state.activeHandleID ?? ""
+        let isGroup = raw.hasPrefix("group:")
+        let subtitle = isGroup ? "Group chat" : raw
 
         return VStack(alignment: .leading, spacing: 2) {
             Text(displayName).font(.headline)
-            if !phone.isEmpty {
-                Text(phone)
+            if !subtitle.isEmpty {
+                Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

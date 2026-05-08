@@ -40,18 +40,18 @@ final class SummaryGenerator {
         self.session = session
     }
 
-    func generateInitial(displayName: String, handle: String, messages: [Message]) async throws -> Output {
-        let prompt = Self.initialPrompt(displayName: displayName, handle: handle, messages: messages)
+    /// One row in the prompt: the message + the already-resolved name to
+    /// attribute it to (e.g. "Me", "Sofia Sill"). The pipeline resolves
+    /// names so the generator stays content-agnostic.
+    typealias Row = (message: Message, sender: String)
+
+    func generateInitial(contextLine: String, threadKind: String, rows: [Row]) async throws -> Output {
+        let prompt = Self.initialPrompt(contextLine: contextLine, threadKind: threadKind, rows: rows)
         return try await call(userPrompt: prompt)
     }
 
-    func generateUpdate(displayName: String, handle: String, prior: Summary, newMessages: [Message]) async throws -> Output {
-        let prompt = try Self.updatePrompt(
-            displayName: displayName,
-            handle: handle,
-            prior: prior,
-            newMessages: newMessages
-        )
+    func generateUpdate(contextLine: String, threadKind: String, prior: Summary, newRows: [Row]) async throws -> Output {
+        let prompt = try Self.updatePrompt(contextLine: contextLine, threadKind: threadKind, prior: prior, newRows: newRows)
         return try await call(userPrompt: prompt)
     }
 
@@ -134,12 +134,12 @@ final class SummaryGenerator {
         return f
     }()
 
-    static func initialPrompt(displayName: String, handle: String, messages: [Message]) -> String {
-        let formatted = formatMessages(displayName: displayName, messages: messages)
-        let start = messages.first.map { messageDateFormatter.string(from: $0.date) } ?? "?"
-        let end = messages.last.map { messageDateFormatter.string(from: $0.date) } ?? "?"
+    static func initialPrompt(contextLine: String, threadKind: String, rows: [Row]) -> String {
+        let formatted = formatRows(rows)
+        let start = rows.first.map { messageDateFormatter.string(from: $0.message.date) } ?? "?"
+        let end = rows.last.map { messageDateFormatter.string(from: $0.message.date) } ?? "?"
         return """
-        You are summarizing a personal iMessage conversation thread.
+        You are summarizing a personal iMessage \(threadKind).
         Extract only information that is still likely to be relevant today.
         Focus on: upcoming plans, ongoing situations, recent life updates, open questions or threads, shared projects.
         Ignore: one-off logistics already resolved, old plans that have passed, small talk.
@@ -152,14 +152,14 @@ final class SummaryGenerator {
 
         Return only valid JSON. No preamble, no markdown fences.
 
-        Contact: \(displayName) (\(handle))
-        Messages (\(messages.count) total, from \(start) to \(end)):
+        \(contextLine)
+        Messages (\(rows.count) total, from \(start) to \(end)):
 
         \(formatted)
         """
     }
 
-    static func updatePrompt(displayName: String, handle: String, prior: Summary, newMessages: [Message]) throws -> String {
+    static func updatePrompt(contextLine: String, threadKind: String, prior: Summary, newRows: [Row]) throws -> String {
         struct PriorWire: Encodable {
             let bullet_points: [String]
             let summary_text: String
@@ -169,11 +169,11 @@ final class SummaryGenerator {
             summary_text: prior.summaryText
         ))
         let priorJSON = String(data: priorData, encoding: .utf8) ?? "{}"
-        let formatted = formatMessages(displayName: displayName, messages: newMessages)
-        let start = newMessages.first.map { messageDateFormatter.string(from: $0.date) } ?? "?"
-        let end = newMessages.last.map { messageDateFormatter.string(from: $0.date) } ?? "?"
+        let formatted = formatRows(newRows)
+        let start = newRows.first.map { messageDateFormatter.string(from: $0.message.date) } ?? "?"
+        let end = newRows.last.map { messageDateFormatter.string(from: $0.message.date) } ?? "?"
         return """
-        You are updating an existing summary of a personal iMessage conversation thread.
+        You are updating an existing summary of a personal iMessage \(threadKind).
         You have the prior summary and a set of new messages since that summary was generated.
         Update the bullet points to reflect the current state of the conversation.
         Remove bullets that are now outdated or resolved. Add bullets for new relevant topics.
@@ -187,27 +187,26 @@ final class SummaryGenerator {
 
         Return only valid JSON. No preamble, no markdown fences.
 
-        Contact: \(displayName) (\(handle))
+        \(contextLine)
 
         Prior summary:
         \(priorJSON)
 
-        New messages (\(newMessages.count) since last summary, \(start) to \(end)):
+        New messages (\(newRows.count) since last summary, \(start) to \(end)):
         \(formatted)
         """
     }
 
-    private static func formatMessages(displayName: String, messages: [Message]) -> String {
-        messages.compactMap { msg -> String? in
+    private static func formatRows(_ rows: [Row]) -> String {
+        rows.compactMap { row -> String? in
             // Strip iMessage's attachment placeholder (U+FFFC) so the model
             // sees clean text rather than mystery characters.
-            let cleaned = msg.text
+            let cleaned = row.message.text
                 .replacingOccurrences(of: "\u{FFFC}", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleaned.isEmpty else { return nil }
-            let when = messageDateFormatter.string(from: msg.date)
-            let who = msg.isFromMe ? "Me" : displayName
-            return "[\(when)] \(who): \(cleaned)"
+            let when = messageDateFormatter.string(from: row.message.date)
+            return "[\(when)] \(row.sender): \(cleaned)"
         }.joined(separator: "\n")
     }
 }
