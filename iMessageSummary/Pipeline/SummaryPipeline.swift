@@ -129,10 +129,19 @@ final class SummaryPipeline {
         case group(chatID: Int64, chatGUID: String, displayName: String, participantNames: [String: String])
 
         /// Stable key for Supabase contacts.phone_or_email and the local cache.
+        ///
+        /// For groups, only the trailing semicolon-separated hex component
+        /// of chat.guid is used (e.g. "any;+;56a3..." → "56a3..."). The full
+        /// GUID contains ';' and '+' which several HTTP / PostgREST layers
+        /// treat as query separators or form-encoded spaces — that produced
+        /// silent SELECT misses and 409 unique-constraint violations on the
+        /// fallback INSERT.
         var supabaseKey: String {
             switch self {
             case .oneToOne(let h, _): return h
-            case .group(_, let g, _, _): return "group:\(g)"
+            case .group(_, let guid, _, _):
+                let suffix = guid.split(separator: ";").last.map(String.init) ?? guid
+                return "group:\(suffix)"
             }
         }
 
@@ -193,6 +202,12 @@ final class SummaryPipeline {
         guard isStillCurrent(token) else { return }
         state.activeHandleID = thread.supabaseKey
         state.activeContactDisplay = thread.displayName
+        // Clear stale contact from the previous thread before the async
+        // Supabase lookup. If that lookup fails (network blip, 409, etc.),
+        // the UI falls back to activeContactDisplay + activeHandleID
+        // instead of mixing the new thread's bullets with the old contact's
+        // header.
+        state.activeContact = nil
 
         var contact: Contact?
         if let repo = state.contactsRepo {
