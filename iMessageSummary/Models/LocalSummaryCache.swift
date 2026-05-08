@@ -42,6 +42,15 @@ final class LocalSummaryCache {
         defaults.removeObject(forKey: key(for: handle))
     }
 
+    /// Wipe every cached summary. Used by the "Clear local cache" button in
+    /// Settings to recover from stale entries.
+    func clearAll() {
+        let keys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(prefix) }
+        for key in keys {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     func allHandles() -> [String] {
         defaults.dictionaryRepresentation().keys
             .filter { $0.hasPrefix(prefix) }

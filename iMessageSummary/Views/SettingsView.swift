@@ -46,6 +46,25 @@ struct SettingsView: View {
             }
 
             Group {
+                Text("Local cache").font(.headline)
+                VStack(alignment: .leading, spacing: 4) {
+                    Button("Clear local cache") {
+                        state.cache.clearAll()
+                        state.currentSummary = nil
+                        state.pendingMessageCount = 0
+                        // Re-run the pipeline against the active thread so the
+                        // sidebar updates without having to re-click in iMessage.
+                        if state.activeHandleID != nil {
+                            NotificationCenter.default.post(name: .iMessageSummaryRefresh, object: nil)
+                        }
+                    }
+                    Text("Removes the UserDefaults fallback used when Supabase isn't available. Supabase rows are not affected.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Group {
                 Text("Blacklist").font(.headline)
                 BlacklistList()
             }
