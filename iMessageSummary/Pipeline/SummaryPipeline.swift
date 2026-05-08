@@ -417,7 +417,26 @@ final class SummaryPipeline {
             }
         }
 
-        // 2. Direct chat.db handle lookup (works when the AX query is a phone
+        // 2. Auto-named groups: chat.display_name is NULL, but iMessage shows
+        //    a synthetic title like "Sofia & Krišjānis" or
+        //    "Sofia, Krišjānis, Alex". Parse the title, resolve each name
+        //    through Contacts, and find a chat that contains all of them.
+        let parsedNames = parseGroupParticipantNames(from: handleQuery)
+        if parsedNames.count >= 2 {
+            var phonePatterns: [String] = []
+            for name in parsedNames {
+                let candidates = await state.contactsResolver.handles(forDisplayName: name)
+                if let first = candidates.first {
+                    phonePatterns.append(first)
+                }
+            }
+            if phonePatterns.count >= 2,
+               let chat = try? db.findGroupChat(containing: phonePatterns) {
+                return await makeGroupThread(chat: chat, fallbackName: handleQuery, db: db)
+            }
+        }
+
+        // 3. Direct chat.db handle lookup (works when the AX query is a phone
         //    or email, e.g. on subsequent re-runs after we've cached the
         //    handle on AppState.activeHandleID).
         if let direct = try db.findContact(matching: handleQuery) {
@@ -431,7 +450,7 @@ final class SummaryPipeline {
             return .oneToOne(handleID: direct.handleID, displayName: displayName)
         }
 
-        // 3. Contacts framework: AX gave us a person's name and chat.db only
+        // 5. Contacts framework: AX gave us a person's name and chat.db only
         //    knows them by phone.
         if let viaContacts = await resolveThroughContacts(displayName: handleQuery, db: db) {
             if (try? db.hasOneToOneChat(forHandleID: viaContacts.handleID)) == false {
@@ -444,6 +463,28 @@ final class SummaryPipeline {
         }
 
         return nil
+    }
+
+    /// Splits an iMessage auto-generated group title into participant names.
+    /// Handles forms like "Sofia & Krišjānis", "Sofia, Krišjānis, Alex", and
+    /// "Sofia, Krišjānis & 2 others" (the trailing "& N others" is dropped).
+    private func parseGroupParticipantNames(from title: String) -> [String] {
+        var t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip trailing " & N others" / " + N more" / " and N others"
+        if let regex = try? NSRegularExpression(
+            pattern: "\\s+(?:&|\\+|and)\\s+\\d+\\s+(?:other|others|more)\\s*$",
+            options: .caseInsensitive
+        ) {
+            let range = NSRange(t.startIndex..., in: t)
+            t = regex.stringByReplacingMatches(in: t, range: range, withTemplate: "")
+        }
+        // Split on "&" or ","; trim whitespace; drop empties.
+        let separators = CharacterSet(charactersIn: ",&")
+        let parts = t
+            .components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parts
     }
 
     private func makeGroupThread(chat: iMessageDB.ChatInfo, fallbackName: String, db: iMessageDB) async -> ResolvedThread {

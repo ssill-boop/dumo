@@ -166,6 +166,51 @@ final class iMessageDB {
         return result
     }
 
+    /// Finds a multi-handle chat that contains every supplied handle pattern.
+    /// `handlePatterns` are typically last-N digits of phone numbers (or full
+    /// emails); each is matched against `handle.id` with LIKE %pattern%.
+    /// Used to pin down which group a Catalyst-Messages auto-name like
+    /// "Sofia & Krišjānis" refers to when chat.display_name is NULL.
+    func findGroupChat(containing handlePatterns: [String]) throws -> ChatInfo? {
+        guard handlePatterns.count >= 2 else { return nil }
+        let containmentClauses = handlePatterns.map { _ in
+            """
+            chat.ROWID IN (
+                SELECT chat_handle_join.chat_id
+                FROM chat_handle_join
+                JOIN handle ON chat_handle_join.handle_id = handle.ROWID
+                WHERE handle.id LIKE ?
+            )
+            """
+        }
+        let sql = """
+        SELECT chat.ROWID, chat.guid, chat.display_name,
+               COUNT(DISTINCT chat_handle_join.handle_id) AS handle_count
+        FROM chat
+        LEFT JOIN chat_handle_join ON chat.ROWID = chat_handle_join.chat_id
+        WHERE \(containmentClauses.joined(separator: " AND "))
+        GROUP BY chat.ROWID
+        HAVING handle_count > 1
+        ORDER BY chat.ROWID DESC
+        LIMIT 1;
+        """
+        var result: ChatInfo?
+        try prepare(sql) { stmt in
+            for (i, pattern) in handlePatterns.enumerated() {
+                sqlite3_bind_text(stmt, Int32(i + 1), "%\(pattern)%", -1, SQLITE_TRANSIENT)
+            }
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                result = ChatInfo(
+                    chatID: sqlite3_column_int64(stmt, 0),
+                    guid: readText(stmt, column: 1) ?? "",
+                    displayName: readText(stmt, column: 2),
+                    handleCount: Int(sqlite3_column_int(stmt, 3))
+                )
+            }
+        }
+        return result
+    }
+
     /// Looks up a chat (group or 1:1) by its `chat.display_name`, case-
     /// insensitive. Returns the most-recently-created match. Used to
     /// detect group chats from the AX-reported title.
